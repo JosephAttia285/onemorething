@@ -1,0 +1,10 @@
+# Never commit a real OpenAI key. Keep secrets.js blank in the repo
+# (AI_PROXY_URL is fine to commit; it is not a secret).
+# If you keep a real key locally for offline dev, uncomment the next line:
+# js/secrets.js
+
+# Python backend (parked / optional)
+backend/venv/
+__pycache__/
+*.pyc
+.DS_Store
