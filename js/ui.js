@@ -4,7 +4,17 @@
    to DOM nodes but contains no clinical logic.
    ============================================================ */
 
-const STATUS_WORD = { red: 'Ask', orange: 'Check', green: 'Done' };
+const STATUS_WORD = { red: 'Ask', orange: 'Check', green: 'Done', grey: 'N/A' };
+
+/* Guarantee a displayed string reads as a sentence: capital first letter and
+   a closing full stop (unless it already ends in . ! ? or a bracket). */
+function _sentence(s) {
+  let x = String(s == null ? '' : s).trim();
+  if (!x) return '';
+  x = x.charAt(0).toUpperCase() + x.slice(1);
+  if (!/[.!?)\]]$/.test(x)) x += '.';
+  return x;
+}
 
 class UIRenderer {
   constructor(refs) { this.refs = refs; }
@@ -22,9 +32,10 @@ class UIRenderer {
       for (const it of items) {
         const r = engine.results[it.id] || { status: 'red' };
         let sum, sumClass;
-        if (r.status === 'green') { sum = r.extracted || 'Documented.'; sumClass = 'tile-sum'; }
-        else if (r.status === 'orange') { sum = (r.extracted || 'Mentioned') + ' (ambiguous)'; sumClass = 'tile-sum'; }
-        else { sum = r.prompt || it.defaultPrompt; sumClass = 'tile-ask'; }
+        if (r.status === 'green') { sum = _sentence(r.extracted || 'Documented'); sumClass = 'tile-sum'; }
+        else if (r.status === 'orange') { sum = _sentence(r.extracted || 'Mentioned, but not specific enough'); sumClass = 'tile-sum'; }
+        else if (r.status === 'grey') { sum = _sentence(r.extracted || 'Not applicable'); sumClass = 'tile-sum'; }
+        else { sum = _sentence(r.prompt || it.defaultPrompt); sumClass = 'tile-ask'; }
         html += `<div class="tile ${r.status}" title="${(r.prompt || it.defaultPrompt).replace(/"/g, '&quot;')}">
           <div class="tile-top"><span class="tile-badge ${r.status}">${STATUS_WORD[r.status]}</span><span class="tile-id">${it.id}</span></div>
           <div class="tile-label">${it.label}</div>
@@ -39,33 +50,38 @@ class UIRenderer {
   renderProgress(engine) {
     const c = engine.counts();
     const total = engine.items.length;
-    const pct = Math.round(((c.green || 0) / total) * 100);
-    const criticals = engine.items.filter(it => it.prio === 'Critical');
+    // grey = "not applicable" — excluded from the completion denominator
+    const applicable = total - (c.grey || 0);
+    const pct = applicable > 0 ? Math.round(((c.green || 0) / applicable) * 100) : 100;
+    const criticals = engine.items.filter(it => it.prio === 'Critical' && engine.status(it.id) !== 'grey');
     const critDone = criticals.filter(it => engine.status(it.id) === 'green').length;
     const critMissing = criticals.length - critDone;
     this.refs.ring.style.background = `conic-gradient(var(--green) ${pct}%, #dbe3e6 0)`;
     this.refs.ringPct.textContent = pct + '%';
+    const na = c.grey ? ` &nbsp;·&nbsp; <span style="color:var(--faint)">${c.grey} n/a</span>` : '';
     this.refs.statusText.innerHTML =
-      `<b>${c.green || 0}</b>/${total} captured &nbsp;·&nbsp; <span style="color:var(--amber-txt)">${c.orange || 0} to check</span> &nbsp;·&nbsp; <span style="color:var(--red)">${c.red || 0} to ask</span>`;
+      `<b>${c.green || 0}</b>/${applicable} captured &nbsp;·&nbsp; <span style="color:var(--amber-txt)">${c.orange || 0} to check</span> &nbsp;·&nbsp; <span style="color:var(--red)">${c.red || 0} to ask</span>${na}`;
     this.refs.critText.textContent = `Critical: ${critDone}/${criticals.length}` + (critMissing ? ' — action needed' : ' ✓');
     this.refs.critText.className = 'crit ' + (critMissing ? 'crit-bad' : 'crit-ok');
   }
 
   /* Copy-pasteable draft summary for the clinical notes. */
-  buildSummary(engine, ehr, radiology) {
+  buildSummary(engine, ehr, radiology, sessionName) {
     const now = new Date().toLocaleString('en-GB');
     const lines = [];
-    lines.push('OneMoreThing — consultation completeness summary (DRAFT — verify before use)');
-    lines.push(now);
+    lines.push('OneMoreThing — consultation completeness summary (DRAFT — verify before use).');
+    if (sessionName) lines.push(`Consultation: ${sessionName}`);
+    lines.push(`Date: ${now}.`);
     lines.push(`Patient context: age ${ehr.age || 'not recorded'}, sex ${ehr.sex || 'not recorded'}.`);
     lines.push('');
     lines.push('Patient-answerable items:');
     for (const it of engine.items) {
       const r = engine.results[it.id] || { status: 'red' };
       let ans;
-      if (r.status === 'green') ans = (r.extracted || 'Documented.');
-      else if (r.status === 'orange') ans = (r.extracted || 'Mentioned') + ' [ambiguous]';
-      else ans = 'N/A (not discussed)';
+      if (r.status === 'green') ans = _sentence(r.extracted || 'Documented');
+      else if (r.status === 'orange') ans = _sentence(r.extracted || 'Mentioned') + ' [Ambiguous — please clarify.]';
+      else if (r.status === 'grey') ans = _sentence(r.extracted || 'Not applicable') + ' [N/A]';
+      else ans = 'Not discussed.';
       lines.push(`- ${it.label}: ${ans}`);
     }
     lines.push('');
@@ -145,12 +161,13 @@ class UIRenderer {
     const empty = this.refs.transcript.querySelector('.empty');
     if (empty) this.refs.transcript.innerHTML = '';
   }
-  appendLine(speaker, text) {
+  appendLine(speaker, text, time) {
     this._ensureClean();
     if (this._interimEl) { this._interimEl.remove(); this._interimEl = null; }
     const div = document.createElement('div');
     div.className = 'line';
-    div.innerHTML = `<span class="who ${speaker === 'Patient' || speaker === 'Speaker' ? 'pt' : ''}">${speaker}</span>${text}`;
+    const ts = time ? `<span class="ts">${time}</span>` : '';
+    div.innerHTML = `<span class="who ${speaker === 'Patient' || speaker === 'Speaker' ? 'pt' : ''}">${speaker}${ts}</span>${text}`;
     this.refs.transcript.appendChild(div);
     this.refs.transcript.scrollTop = this.refs.transcript.scrollHeight;
   }
@@ -163,6 +180,27 @@ class UIRenderer {
     }
     this._interimEl.innerHTML = `<span class="who pt">Speaker</span>${text}`;
     this.refs.transcript.scrollTop = this.refs.transcript.scrollHeight;
+  }
+
+  /* Saved-consultations list. */
+  renderSessions(store) {
+    const list = store.list();
+    if (!list.length) {
+      this.refs.sessionsList.innerHTML = '<div class="empty">No saved consultations yet. They are stored on this computer once you press Stop.</div>';
+      return;
+    }
+    this.refs.sessionsList.innerHTML = list.map(s => {
+      const c = s.counts || {};
+      const esc = t => String(t || '').replace(/[<>&"]/g, ch => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[ch]));
+      return `<div class="sess-row">
+        <div class="sess-main">
+          <div class="sess-name-t">${esc(s.name)}</div>
+          <div class="sess-meta">${esc(s.dateLabel || '')} &nbsp;·&nbsp; ${c.green || 0} captured, ${c.orange || 0} to check, ${c.red || 0} to ask</div>
+        </div>
+        <button class="btn-mini" data-open="${s.id}">Open</button>
+        <button class="btn-mini danger" data-del="${s.id}">Delete</button>
+      </div>`;
+    }).join('');
   }
 
   /* Toolbar engine pill: state ∈ rules|ai|busy|err */

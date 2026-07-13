@@ -42,16 +42,25 @@ class AuditLog {
 class TranscriptStore {
   constructor() { this.lines = []; this.text = ''; }
   addLine(speaker, text) {
-    this.lines.push({ speaker, text });
+    const time = AuditLog.now();
+    this.lines.push({ speaker, text, time });
     this.text += '\n' + speaker + ': ' + text;
+    return time;
   }
   addRaw(text) {
-    this.lines.push({ speaker: 'Speaker', text });
+    const time = AuditLog.now();
+    this.lines.push({ speaker: 'Speaker', text, time });
     this.text += '\n' + text;
+    return time;
   }
   get lowercased() { return this.text.toLowerCase(); }
   get isEmpty() { return this.text.trim().length === 0; }
   clear() { this.lines = []; this.text = ''; }
+  /* Rebuild from a saved session. */
+  restore(lines) {
+    this.lines = (lines || []).slice();
+    this.text = this.lines.map(l => (l.speaker ? l.speaker + ': ' : '') + l.text).join('\n');
+  }
 }
 
 /* Radiology/PET report — per-field values entered by the clinician.
@@ -76,7 +85,7 @@ class RuleEngine {
     this.prevStatus = {};
   }
   run(transcriptStore) {
-    const t = transcriptStore.lowercased;
+    const t = _normalizeNumbers(transcriptStore.lowercased);
     for (const item of this.items) {
       const r = item.evaluate(t);
       this.results[item.id] = r;
@@ -96,7 +105,7 @@ class RuleEngine {
       STATUS_ORDER[this.status(a.id)] - STATUS_ORDER[this.status(b.id)]);
   }
   counts() {
-    const c = { red: 0, orange: 0, green: 0 };
+    const c = { red: 0, orange: 0, green: 0, grey: 0 };
     for (const it of this.items) c[this.status(it.id)] = (c[this.status(it.id)] || 0) + 1;
     return c;
   }

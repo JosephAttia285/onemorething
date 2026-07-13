@@ -37,11 +37,17 @@ class DemoPlayer {
 }
 
 class App {
+  static AI_PAUSE_MS = 1400;    // fire ~1.4s after the speaker pauses (event-driven, per exchange)
+  static AI_MAX_MS = 40000;     // rare safety net only for very long uninterrupted speech
+  static AI_MIN_DELTA = 25;     // require ~25 new transcript chars before re-checking
+
   constructor() {
     // ----- DOM references -----
     this.refs = {};
     [
       'micBtn', 'pauseBtn', 'demoBtn', 'ctBtn', 'ctBtn2', 'settingsBtn', 'pipBtn', 'resetBtn',
+      'sessionName', 'sessionsBtn', 'sessionsModal', 'sessionsList', 'sessionsClose',
+      'helpBtn', 'welcomeModal', 'welcomeDemo', 'welcomeClose',
       'tiles', 'ring', 'ringPct', 'statusText', 'critText', 'liveDot',
       'post', 'summary', 'copyBtn', 'transcript', 'transcriptNote', 'relabelBtn',
       'readiness', 'radiology', 'audit', 'ehrAge', 'ehrSex', 'ehrNote', 'enginePill',
@@ -62,6 +68,14 @@ class App {
     this._miniRoot = null;
     this._autoMini = true;       // attempt to auto-open the floating window when hidden
     this.finished = false;       // consultation stopped → post-consult view shown
+    this.sessions = new SessionStore();
+    this.sessionId = null;
+    this.sessionStartedAt = null;
+    this._aiInFlight = false;    // an AI check is currently running
+    this._aiPending = false;     // new speech arrived while a check was running
+    this._aiLastLen = 0;         // transcript length at the last AI check
+    this._aiPauseTimer = null;
+    this._aiMaxTimer = null;
     this.engine = new RuleEngine(this.items, this.audit);
     this.readiness = new RiskReadiness(this.engine, this.ehr, this.radiology);
 
@@ -69,12 +83,12 @@ class App {
     this.ui = new UIRenderer(this.refs);
     this.llm = new LlmRefiner({ onStatus: (m, c) => this._setLlmStatus(m, c) });
     this.speech = new SpeechController({
-      onFinal: (text) => { this.transcript.addRaw(text); this.ui.appendLine('Speaker', text); this.refresh(); },
+      onFinal: (text) => { const t = this.transcript.addRaw(text); this.ui.appendLine('Speaker', text, t); this.refresh(); },
       onInterim: (text) => this.ui.showInterim(text),
       onError: (err) => { if (err === 'unsupported') alert('Live speech recognition is not supported here. Please use Chrome, or run the demo.'); if (err === 'not-allowed') { alert('Microphone permission denied.'); this.ui.setMicState(false); } },
     });
     this.demo = new DemoPlayer(DEMO_SCRIPT,
-      (who, text) => { this.transcript.addLine(who, text); this.ui.appendLine(who, text); this.refresh(); },
+      (who, text) => { const t = this.transcript.addLine(who, text); this.ui.appendLine(who, text, t); this.refresh(); },
       () => { this.refs.demoBtn.disabled = false; this._updatePauseBtn(); this._consultEnd(); });
   }
 
@@ -90,7 +104,12 @@ class App {
     this.refs.relabelBtn.classList.toggle('hidden', !this.llm.ready);
     this._updateEnginePill();
     this.ui.renderRadiology(this.radiology);
+    this.refs.sessionName.value = SessionStore.defaultName();
     this.refresh();
+    // show the walkthrough the first time someone uses it
+    try {
+      if (!localStorage.getItem('omt_seen_intro')) this.refs.welcomeModal.classList.add('open');
+    } catch (e) { /* private mode */ }
     // best-effort: pop the floating window out when the page is hidden/minimised.
     // Browsers require a recent user gesture to open it, so this only succeeds
     // sometimes (e.g. shortly after a click) — the Minimise button is the reliable way.
@@ -110,31 +129,126 @@ class App {
     this.ui.renderReadiness(this.readiness);
     this.ui.renderAudit(this.audit);
     if (this._miniRoot) this._renderMini();
-    if (this.finished) this.refs.summary.textContent = this.ui.buildSummary(this.engine, this.ehr, this.radiology);
-    if (this.llm.enabled && !this.transcript.isEmpty) {
-      this.ui.setEnginePill('busy', '● AI refining…');
-      this.llm.schedule(() => this.llm.refine(this.transcript, this.engine, this.audit).then(() => {
-        this.ui.renderTiles(this.engine);
-        this.ui.renderProgress(this.engine);
-        this.ui.renderReadiness(this.readiness);
-        this.ui.renderAudit(this.audit);
-        if (this.finished) this.refs.summary.textContent = this.ui.buildSummary(this.engine, this.ehr, this.radiology);
-        this._updateEnginePill();
-      }));
+    if (this.finished) this.refs.summary.textContent = this.ui.buildSummary(this.engine, this.ehr, this.radiology, this._sessionLabel());
+    this._scheduleAiCheck();
+  }
+
+  /* ---- efficient AI checking ----
+     The whole transcript is re-analysed at natural PAUSES (after ~2.5s of
+     silence) and at least every ~20s during continuous speech, but only when
+     enough new text has arrived, and never with two calls in flight. */
+  _scheduleAiCheck() {
+    if (!this.llm.enabled || this.transcript.isEmpty) return;
+    clearTimeout(this._aiPauseTimer);
+    this._aiPauseTimer = setTimeout(() => this._runAiCheck(), App.AI_PAUSE_MS);        // fire on a pause
+    if (!this._aiMaxTimer) this._aiMaxTimer = setTimeout(() => this._runAiCheck(), App.AI_MAX_MS);  // …or periodically
+  }
+
+  _runAiCheck(force = false) {
+    clearTimeout(this._aiPauseTimer); this._aiPauseTimer = null;
+    if (this._aiMaxTimer) { clearTimeout(this._aiMaxTimer); this._aiMaxTimer = null; }
+    if (!this.llm.ready) return;
+    if (this._aiInFlight) { this._aiPending = true; return; }          // don't overlap calls
+    const len = this.transcript.text.length;
+    if (!force && len - this._aiLastLen < App.AI_MIN_DELTA) return;    // skip if nothing meaningful is new
+    this._aiInFlight = true;
+    this._aiLastLen = len;
+    this.ui.setEnginePill('busy', '● AI checking…');
+    this.llm.refine(this.transcript, this.engine, this.audit).then(() => {
+      this.ui.renderTiles(this.engine);
+      this.ui.renderProgress(this.engine);
+      this.ui.renderReadiness(this.readiness);
+      this.ui.renderAudit(this.audit);
+      if (this.finished) this.refs.summary.textContent = this.ui.buildSummary(this.engine, this.ehr, this.radiology, this._sessionLabel());
+      this._updateEnginePill();
+      this._aiInFlight = false;
+      if (this.finished) this._saveSession();   // keep the saved copy in step with the AI's final view
+      if (this._aiPending) { this._aiPending = false; this._scheduleAiCheck(); }   // new speech arrived mid-call
+    });
+  }
+
+  _closeWelcome() {
+    this.refs.welcomeModal.classList.remove('open');
+    try { localStorage.setItem('omt_seen_intro', '1'); } catch (e) { /* private mode */ }
+  }
+
+  _sessionLabel() { return (this.refs.sessionName.value || '').trim() || SessionStore.defaultName(); }
+
+  /* Consultation start/finish drives the live-vs-post view. */
+  _consultStart() {
+    this.finished = false;
+    this.refs.post.classList.add('hidden');
+    this.refs.liveDot.classList.add('on');
+    if (!this.sessionId) {                               // begin a new saved consultation
+      this.sessionId = 's' + Date.now().toString(36);
+      this.sessionStartedAt = Date.now();
+      if (!this.refs.sessionName.value.trim()) this.refs.sessionName.value = SessionStore.defaultName();
     }
   }
 
-  /* Consultation start/finish drives the live-vs-post view. */
-  _consultStart() { this.finished = false; this.refs.post.classList.add('hidden'); this.refs.liveDot.classList.add('on'); }
   _consultEnd() {
     this.refs.liveDot.classList.remove('on');
     if (!this.transcript.isEmpty) {
       this.finished = true;
-      this.refs.summary.textContent = this.ui.buildSummary(this.engine, this.ehr, this.radiology);
+      this.refs.summary.textContent = this.ui.buildSummary(this.engine, this.ehr, this.radiology, this._sessionLabel());
       this.refs.post.classList.remove('hidden');
       this.refs.post.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      this._runAiCheck(true);       // one final full AI check so the end state is fresh
       this._finalizeTranscript();   // AI speaker labelling if connected
+      this._saveSession();          // store it so it can be reopened later
     }
+  }
+
+  /* Save the current consultation to this computer. */
+  _saveSession() {
+    if (this.transcript.isEmpty) return;
+    if (!this.sessionId) { this.sessionId = 's' + Date.now().toString(36); this.sessionStartedAt = Date.now(); }
+    const now = new Date();
+    this.sessions.save({
+      id: this.sessionId,
+      name: this._sessionLabel(),
+      startedAt: this.sessionStartedAt || now.getTime(),
+      endedAt: now.getTime(),
+      dateLabel: now.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      lines: this.transcript.lines,
+      results: this.engine.results,
+      counts: this.engine.counts(),
+      ehr: { ...this.ehr },
+      radiology: { ...this.radiology.values },
+      summary: this.refs.summary.textContent,
+    });
+  }
+
+  /* Reopen a previously saved consultation. */
+  _loadSession(id) {
+    const s = this.sessions.get(id);
+    if (!s) return;
+    this.speech.stop(); this.ui.setMicState(false); this.demo.stop();
+    this._micPaused = false; this._updatePauseBtn();
+    this.sessionId = s.id;
+    this.sessionStartedAt = s.startedAt;
+    this.refs.sessionName.value = s.name || '';
+    this.transcript.restore(s.lines || []);
+    this.engine.results = s.results || {};
+    this.engine.prevStatus = {};
+    this.ehr.age = (s.ehr && s.ehr.age) || '';
+    this.ehr.sex = (s.ehr && s.ehr.sex) || '';
+    this.refs.ehrAge.value = this.ehr.age;
+    this.refs.ehrSex.value = this.ehr.sex;
+    this.radiology.values = { ...(s.radiology || {}) };
+    this.audit.clear();
+    this.ui.renderTiles(this.engine);
+    this.ui.renderProgress(this.engine);
+    this.ui.renderRadiology(this.radiology);
+    this.ui.renderReadiness(this.readiness);
+    this.ui.renderAudit(this.audit);
+    this.ui.clearTranscript('');
+    (s.lines || []).forEach(l => this.ui.appendLine(l.speaker || 'Speaker', l.text, l.time));
+    this.refs.summary.textContent = s.summary || this.ui.buildSummary(this.engine, this.ehr, this.radiology, s.name);
+    this.finished = true;
+    this.refs.post.classList.remove('hidden');
+    this.refs.sessionsModal.classList.remove('open');
+    this.refs.post.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   _wire() {
@@ -144,6 +258,24 @@ class App {
       this._updatePauseBtn();
     };
     this.refs.relabelBtn.onclick = () => this._finalizeTranscript(true);
+    // saved consultations
+    this.refs.sessionsBtn.onclick = () => { this.ui.renderSessions(this.sessions); this.refs.sessionsModal.classList.add('open'); };
+    this.refs.sessionsClose.onclick = () => this.refs.sessionsModal.classList.remove('open');
+    this.refs.sessionsModal.onclick = (e) => { if (e.target.id === 'sessionsModal') this.refs.sessionsModal.classList.remove('open'); };
+    this.refs.sessionsList.addEventListener('click', (e) => {
+      const open = e.target.getAttribute && e.target.getAttribute('data-open');
+      const del = e.target.getAttribute && e.target.getAttribute('data-del');
+      if (open) this._loadSession(open);
+      if (del) { this.sessions.remove(del); this.ui.renderSessions(this.sessions); }
+    });
+    // welcome / help
+    this.refs.helpBtn.onclick = () => this.refs.welcomeModal.classList.add('open');
+    this.refs.welcomeClose.onclick = () => this._closeWelcome();
+    this.refs.welcomeModal.onclick = (e) => { if (e.target.id === 'welcomeModal') this._closeWelcome(); };
+    this.refs.welcomeDemo.onclick = () => {
+      this._closeWelcome();
+      this.refs.demoBtn.disabled = true; this._consultStart(); this.demo.play(); this._updatePauseBtn();
+    };
     this.refs.copyBtn.onclick = () => {
       navigator.clipboard.writeText(this.refs.summary.textContent).then(() => {
         this.refs.copyBtn.textContent = '✓ Copied';
@@ -267,7 +399,10 @@ class App {
     for (const id of Object.keys(found)) { this.radiology.set(id, found[id]); applied.push(labels[id]); }
     this.ui.renderRadiology(this.radiology);
     this.ui.renderReadiness(this.readiness);
-    if (this.finished) this.refs.summary.textContent = this.ui.buildSummary(this.engine, this.ehr, this.radiology);
+    if (this.finished) {
+      this.refs.summary.textContent = this.ui.buildSummary(this.engine, this.ehr, this.radiology, this._sessionLabel());
+      this._saveSession();   // scan findings become part of the saved consultation
+    }
     if (applied.length) {
       this.refs.ctExtractNote.textContent = '✓ Extracted: ' + applied.join(', ') + '. Review/edit in the radiology panel.';
       this.refs.ctExtractNote.style.color = 'var(--green)';
@@ -337,7 +472,7 @@ class App {
   /* Fill age/sex from the conversation when the patient states them,
      unless the clinician has manually edited the field. */
   _applyContext() {
-    const ctx = extractPatientContext(this.transcript.lowercased);
+    const ctx = extractPatientContext(_normalizeNumbers(this.transcript.lowercased));
     const applied = [];
     if (ctx.age && !this.ehrAgeEdited && ctx.age !== this.ehr.age) {
       this.ehr.age = ctx.age; this.refs.ehrAge.value = ctx.age; applied.push('age');
@@ -352,6 +487,9 @@ class App {
     this.speech.stop();
     this.ui.setMicState(false);
     this._micPaused = false;
+    clearTimeout(this._aiPauseTimer); this._aiPauseTimer = null;
+    if (this._aiMaxTimer) { clearTimeout(this._aiMaxTimer); this._aiMaxTimer = null; }
+    this._aiInFlight = false; this._aiPending = false; this._aiLastLen = 0;
     this.transcript.clear();
     this.engine.reset();
     this.audit.clear();
@@ -362,6 +500,10 @@ class App {
     this.refs.post.classList.add('hidden');
     this.refs.liveDot.classList.remove('on');
     this.refs.summary.textContent = '';
+    // start a fresh consultation (previously saved ones are kept)
+    this.sessionId = null;
+    this.sessionStartedAt = null;
+    this.refs.sessionName.value = SessionStore.defaultName();
     // restore EHR defaults and unlock auto-fill
     this.ehr.age = EHR_DEFAULTS.age; this.ehr.sex = EHR_DEFAULTS.sex;
     this.ehrAgeEdited = false; this.ehrSexEdited = false;

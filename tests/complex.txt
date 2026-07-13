@@ -1,0 +1,106 @@
+Doctor: Good morning, Mr Hughes. I am one of the respiratory doctors. How are you feeling today?
+Patient: Physically, I am about the same as yesterday. Mentally, I have been better.
+Doctor: You have been referred because a small area called a pulmonary nodule was seen on a scan.
+Patient: I thought a nodule was something you got on your knuckle. The letter did not explain much.
+Doctor: Have you ever smoked?
+Patient: No. I have never thought of myself as a smoker.
+Doctor: Have you ever used cigarettes, cigars, a pipe or anything similar?
+Patient: I used to carry cigarettes when I worked nights, but carrying them and smoking them are not necessarily the same thing.
+Doctor: Did you personally smoke any of them?
+Patient: Sometimes I would light one to keep myself awake. I did not always finish it because they tasted dreadful.
+Doctor: How often would that have happened?
+Patient: It depended on the shift. Some weeks none, some weeks several.
+Doctor: Could you estimate an average number per day or per week?
+Patient: Not honestly. I have never counted cigarettes.
+Doctor: Do you use cigarettes now?
+Patient: No, I gave up buying packets a long time ago.
+Doctor: When was that?
+Patient: Before the pandemic, certainly. Or possibly during it.
+Doctor: Do you ever smoke cigarettes belonging to someone else?
+Patient: Only if Derek comes round. He leaves them on the garden table.
+Doctor: How often does Derek visit?
+Patient: Usually on Sundays. I might have a couple with him, but I would not call that smoking. It is more of a social ritual.
+Doctor: Have you noticed any changes in your breathing recently?
+Patient: My breathing has never been elegant. I avoid stairs now, so it is difficult to compare.
+Doctor: Why do you avoid them?
+Patient: My knee is unreliable, and I become puffed by the time I reach the landing.
+Doctor: Have you developed a new cough?
+Patient: I clear my throat in the mornings, but everybody does that.
+Doctor: Are you bringing up any phlegm?
+Patient: Sometimes something grey appears. It is not every day.
+Doctor: Have you ever seen blood in it?
+Patient: No, definitely not.
+Doctor: Has it ever looked pink, red, brown or rusty?
+Patient: There was a reddish thread in the sink once, but I had eaten beetroot the night before and my gums bleed when I brush too enthusiastically.
+Doctor: Was the thread mixed with phlegm that you had coughed up?
+Patient: It was in the general area. I cannot swear where it came from.
+Doctor: Have you had any chest pain or wheezing?
+Patient: I get a squeak when I lie on my left side.
+Doctor: Do you use any inhalers?
+Patient: There is a blue tube in the kitchen drawer. I use it when the air feels too narrow.
+Doctor: Were you told that you have asthma, COPD or emphysema?
+Patient: A nurse once said my lungs looked older than the rest of me. She may have used the word emphysema, but she was speaking while the printer was making a terrible noise.
+Doctor: Were you prescribed the blue inhaler after that appointment?
+Patient: I think so. There was also a brown one, but I stopped using it because it made my mouth taste like old coins.
+Doctor: Have you had any recent chest infections, pneumonia, COVID or courses of antibiotics?
+Patient: I had something unpleasant after Christmas. Tablets arrived at the pharmacy, but I cannot remember whether they were antibiotics or steroids.
+Doctor: Did you have a fever or bring up coloured phlegm?
+Patient: I felt hot, then cold, then hot again. The phlegm was an unpleasant colour, somewhere between mustard and wallpaper paste.
+Doctor: Approximately when was this?
+Patient: About six weeks ago, near my auntie's funeral. She had been unwell for months. They found a tumour in her lung, and by the end she could hardly breathe.
+Doctor: Has anyone in your family had lung cancer?
+Patient: No, not that I know of.
+Doctor: Was your aunt's lung tumour described as cancer?
+Patient: Nobody used that word around her. My cousin said it had spread, but families say all sorts of things.
+Doctor: Was she related to your mother or your father?
+Patient: She was my mother's younger sister.
+Doctor: Do you know whether the tumour started in the lung or spread there from somewhere else?
+Patient: I assumed it started there because that was where the doctors kept looking, but I never saw the letters.
+Doctor: Have you ever had cancer yourself?
+Patient: No. I have had bits removed, but nothing I would call cancer.
+Doctor: What kinds of things have been removed?
+Patient: A patch from my shoulder, a growth from inside my nose and three polyps from the bowel. The shoulder one needed another operation because they said the edges were not clear.
+Doctor: Were you told what the shoulder lesion was?
+Patient: Something beginning with mel. It was not the dangerous kind, according to the doctor, although my daughter insists it was.
+Doctor: Do you remember when that happened?
+Patient: The first operation was around 2016.
+Doctor: Have you ever had lung cancer specifically?
+Patient: Not officially.
+Doctor: What do you mean by not officially?
+Patient: Years ago, somebody saw a shadow on an X-ray and sent me for another picture. Later they said it had gone, or moved, or perhaps belonged to the machine.
+Doctor: Were you ever treated for a tumour in the lung?
+Patient: No operation or anything like that. I may have had antibiotics.
+Doctor: Have you experienced any unexplained weight loss recently?
+Patient: My trousers are looser, but the button also came off.
+Doctor: Have you weighed yourself?
+Patient: I was eighty-four kilograms at the pharmacy in January and seventy-nine at my daughter's house last week, but her scales are extremely judgemental.
+Doctor: Were you trying to lose weight?
+Patient: I stopped eating biscuits during Lent, except on Sundays.
+Doctor: Has your appetite changed?
+Patient: Food does not interest me much in the evenings, but I still manage a full breakfast.
+Doctor: Any night sweats or fevers?
+Patient: I wake up damp sometimes, although my electric blanket has only two settings: glacier and volcano.
+Doctor: Are you taking any medication that lowers your immune system, such as regular steroids, chemotherapy, biological injections or transplant medication?
+Patient: I have an injection every eight weeks that arrives in a refrigerated box.
+Doctor: What is the injection for?
+Patient: My skin. Or possibly my joints.
+Doctor: Do you know its name?
+Patient: It sounds like a Scandinavian furniture company. Ustekinumab, perhaps, or something close to that.
+Doctor: When was your most recent dose?
+Patient: Sometime in the spring. I would need to check the calendar.
+Doctor: Do you have any heart, kidney or lung conditions, or do you take blood-thinning medication?
+Patient: I take a little white tablet for the rhythm, a larger white tablet for water, and a pink one that the pharmacist says makes bruises more interesting.
+Doctor: Do you know the names?
+Patient: One is warfarin, unless that was the old one. They changed something after I fell into the recycling bin.
+Doctor: Have you had any previous heart attacks, strokes or kidney disease?
+Patient: I had a small event in 2019. The hospital could not agree whether it was the heart or a panic attack.
+Doctor: How far can you walk comfortably?
+Patient: Perhaps ten minutes altogether. On a bad day, I stop outside the bakery and pretend to study the window.
+Doctor: Can you climb a flight of stairs?
+Patient: I can, but I use both hands on the banister and stop on the landing.
+Doctor: How worried are you about the pulmonary nodule?
+Patient: I am not worried. Worrying achieves nothing.
+Doctor: How have you been sleeping since receiving the letter?
+Patient: Poorly. I keep waking at three in the morning and checking whether I am still breathing. My daughter has hidden my tablet because I spent an entire night reading about survival rates.
+Doctor: Before we finish, is there anything else about your health that you think may be relevant?
+Patient: Derek says the damp patch in my bedroom is probably black mould, but the landlord says it is decorative shading.

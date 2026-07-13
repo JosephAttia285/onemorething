@@ -16,12 +16,15 @@
 </header>
 
 <div class="toolbar">
+  <input id="sessionName" class="sess-name" placeholder="Name this consultation" title="Name of this consultation (saved with the date and time)">
   <button id="micBtn" class="primary">● Start</button>
   <button id="pauseBtn" disabled>⏸ Pause</button>
   <button id="demoBtn">▷ Play demo</button>
   <button id="ctBtn">✎ CT/PET report</button>
+  <button id="sessionsBtn">🗂 Saved</button>
   <button id="settingsBtn">⚙ AI settings</button>
   <button id="pipBtn">⤢ Minimise</button>
+  <button id="helpBtn">? Help</button>
   <button id="resetBtn" class="danger">Reset</button>
   <span id="enginePill" class="pill rules">● Rules engine</span>
 </div>
@@ -48,8 +51,8 @@
       <div class="panel-h">Patient context <span class="count">from EHR / speech</span></div>
       <div class="panel-b">
         <div class="ehr-box">
-          <label>Age <input id="ehrAge" type="number" min="0" max="120" value="67"></label>
-          <label>Sex <select id="ehrSex"><option>Male</option><option>Female</option></select></label>
+          <label>Age <input id="ehrAge" type="number" min="0" max="120" value="" placeholder="—"></label>
+          <label>Sex <select id="ehrSex"><option value="">— not recorded —</option><option>Male</option><option>Female</option></select></label>
         </div>
         <div class="ehr-note" id="ehrNote">Auto-fills if the patient states age/sex · editable</div>
       </div>
@@ -79,6 +82,37 @@
     <div class="panel">
       <div class="panel-h">Audit log <span class="count">evidence &amp; status changes</span></div>
       <div class="panel-b" id="audit"><div class="empty">Status changes and transcript evidence are logged here.</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- welcome / how-to-use modal -->
+<div class="modal" id="welcomeModal">
+  <div class="box">
+    <h3>Welcome to OneMoreThing.</h3>
+    <p>This tool listens to a pulmonary nodule consultation and shows you, at a glance, which key questions have been covered and which are still missing. It does not diagnose or score risk — it simply helps make sure nothing important is missed.</p>
+    <div class="steps">
+      <div class="step"><span class="step-n">1</span><div><b>Name the consultation and press Start.</b> The date and time are saved automatically.</div></div>
+      <div class="step"><span class="step-n">2</span><div><b>Talk to your patient as normal.</b> The tiles recolour as topics are covered: <span class="k-red">red</span> = still to ask, <span class="k-amber">amber</span> = mentioned but unclear, <span class="k-green">green</span> = captured, grey = not applicable. Glance up before finishing.</div></div>
+      <div class="step"><span class="step-n">3</span><div><b>Press Stop.</b> The transcript writes out, and you get a draft summary to copy into your notes. Paste the CT/PET report to complete the risk-score readiness.</div></div>
+    </div>
+    <p style="margin-top:12px">The quickest way to see it working is to play the sample consultation.</p>
+    <div class="modal-actions">
+      <button id="welcomeDemo">▷ Play the demo</button>
+      <button class="primary" id="welcomeClose">Got it</button>
+    </div>
+    <div class="note">Prototype for informal testing only. Not for real patient data. All clinical decisions remain the responsibility of the treating clinician.</div>
+  </div>
+</div>
+
+<!-- saved consultations modal -->
+<div class="modal" id="sessionsModal">
+  <div class="box">
+    <h3>Saved consultations.</h3>
+    <p>Each consultation is saved on this computer when you press Stop, so you can come back to it at the end of the day. Nothing is uploaded anywhere.</p>
+    <div id="sessionsList" class="sess-list"></div>
+    <div class="modal-actions">
+      <button class="primary" id="sessionsClose">Close</button>
     </div>
   </div>
 </div>
@@ -123,6 +157,7 @@
 <script src="js/secrets.js"></script>
 <script src="js/config.js"></script>
 <script src="js/engine.js"></script>
+<script src="js/sessions.js"></script>
 <script src="js/speech.js"></script>
 <script src="js/llm.js"></script>
 <script src="js/ui.js"></script>

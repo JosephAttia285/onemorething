@@ -58,6 +58,8 @@ Age and sex sit at the top of this panel, pre-loaded from the EHR (mock defaults
 - The **rules engine** matches keywords and phrases (regular expressions). It's instant, free, fully offline, and explainable — but brittle: it only catches phrasings it was written to expect.
 - The optional **AI engine** sends the transcript to an OpenAI-compatible language model with a strict "completeness only" prompt. It handles paraphrase and context far better, but costs money, needs a network, and depends on prompt quality.
 
+The rules act as a **confidence floor**: the AI may *raise* a status or refine the wording, but it cannot pull a status *below* what the deterministic rules found. This stops the two engines oscillating (e.g. rules say "current smoker → quit date N/A = green"; the AI can't drag it back to red) and keeps reliable matches sticky. (Trade-off: the AI can't retract a rules false-positive; adjustable in `llm.js`.)
+
 Both can set an item's status. The little **rules** / **AI** chip on each card tells you which one did, and a pill in the toolbar shows the overall engine state.
 
 ### Handling self-correction (when the patient changes their mind)
@@ -88,7 +90,13 @@ onemorething/
     ├── llm.js        Optional AI refinement + transcript speaker-labelling
     ├── ui.js         All on-screen rendering (tiles, wheel, summary)
     └── app.js        Wires everything together; starts the app
+└── tests/            Evaluation harness (rules-engine scorecard)
+    ├── eval.js       Runs the gold transcripts, prints a per-item score
+    ├── gold.json     Expected status for each item in each script
+    └── *.txt         Gold consultation scripts (simple / mild / complex)
 ```
+
+Run the scorecard with `node tests/eval.js` — see `tests/README.md`.
 
 (A parked `backend/` folder with an experimental local 2-speaker diarisation
 server also exists but is no longer wired into the UI.)

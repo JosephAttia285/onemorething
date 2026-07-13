@@ -1,0 +1,84 @@
+Doctor: Good morning, Mrs Bennett. I am one of the respiratory doctors. How are you today?
+Patient: I am all right, thank you. I was fine until I received the letter telling me there was something on my lung.
+Doctor: You have been referred because a small area called a pulmonary nodule was seen on a recent scan.
+Patient: The letter made it sound as though I should start putting my affairs in order.
+Doctor: Finding a nodule does not automatically mean cancer. Before today, had anybody explained what a pulmonary nodule was?
+Patient: My GP said it was a small shadow, but I did not really understand much beyond that.
+Doctor: I would first like to ask about smoking. Do you smoke at the moment?
+Patient: No, not really. I packed all that in years ago.
+Doctor: Did you smoke regularly in the past?
+Patient: I did when I was younger, but that was a long time ago.
+Doctor: Roughly how old were you when you started?
+Patient: I was probably nineteen. Everyone seemed to do it then, especially where I worked.
+Doctor: Do you remember approximately how much you used to have each day?
+Patient: Perhaps half a packet on an ordinary day. More if I was out with friends, but about ten most days would be fair.
+Doctor: And when did you stop?
+Patient: I stopped when I was around fifty-four. My daughter kept complaining about the smell on my clothes.
+Doctor: Have you noticed any new cough, breathlessness, chest pain or wheezing?
+Patient: I have always had a bit of a morning cough. It is usually worse after my first cup of tea.
+Doctor: Has the cough changed recently?
+Patient: It has become more noticeable over the last month or two. I sometimes have to sit by the back door until it settles.
+Doctor: Are you bringing up any phlegm?
+Patient: Not much now. I had quite a lot when I had that bug before Christmas.
+Doctor: What happened then?
+Patient: I was coughing up yellow stuff, felt hot and shivery. The GP gave me antibiotics for a week.
+Doctor: Do you remember when that was?
+Patient: About two months ago. I cannot remember the name of the tablets, but they cleared most of it.
+Doctor: Have you ever noticed any blood when coughing?
+Patient: No, nothing like that.
+Doctor: Have you become more short of breath?
+Patient: Only when I am hurrying. I am not twenty anymore, doctor.
+Doctor: What happens when you walk at your normal pace?
+Patient: I can get to the local shop, which is about ten minutes away. I usually stop for a moment when I arrive.
+Doctor: How are you with stairs?
+Patient: I can manage the stairs at home, but I pause on the landing before carrying on.
+Doctor: Have you ever been diagnosed with COPD or emphysema?
+Patient: No, I do not think so. I have never been told that I have COPD.
+Doctor: Do you use any inhalers?
+Patient: I have a purple one every morning and a blue one if my chest feels tight.
+Doctor: Do you know why they were prescribed?
+Patient: The practice nurse said there was some emphysema showing and that the inhalers would help keep my airways open.
+Doctor: Do you know when you were told about the emphysema?
+Patient: About three years ago, after I had a breathing test at the surgery.
+Doctor: Is there anything else you normally do when the morning cough is worse?
+Patient: I usually stand outside for a few minutes and have a fag while the dog is in the garden.
+Doctor: When you say you have a fag, how often would that be?
+Patient: Most mornings, I suppose. Sometimes I have another one after dinner, especially if it has been a stressful day.
+Doctor: So although you stopped for a period, you have started having cigarettes again?
+Patient: I would not say I properly started again. A packet of twenty lasts me about four days, so it is hardly heavy smoking.
+Doctor: When did you begin having them again?
+Patient: Around four years ago, after my sister died. I had stopped for nearly nine years before that.
+Doctor: Have you experienced any loss of weight, reduced appetite, night sweats, fevers or unusual tiredness?
+Patient: I have lost about half a stone, but I have been trying to eat less bread and biscuits.
+Doctor: Was all of the weight loss intentional?
+Patient: Mostly, I think. My clothes have become looser more quickly than I expected, and I have not felt very hungry lately, but that could be the worry.
+Doctor: Any night sweats or ongoing fevers?
+Patient: No night sweats. I had a temperature with the chest infection, but not since then.
+Doctor: Have you ever had cancer in the past?
+Patient: No, nothing serious like that.
+Doctor: Have you ever needed surgery for a tumour or an abnormal growth?
+Patient: Well, I had a bit of my bowel removed in 2018 after they found a small cancer during a colonoscopy, but they took it all out.
+Doctor: Did you require chemotherapy or radiotherapy afterwards?
+Patient: No. They said the operation was enough. I had follow-up scans for a few years, and as far as I know everything has remained clear.
+Doctor: Has anyone in your close family had lung cancer?
+Patient: My mother had something in her chest, but there were several things wrong with her by the end.
+Doctor: Do you know whether the cancer started in her lung?
+Patient: Yes, actually, it did. They called it lung cancer. She was about seventy-two when she was diagnosed.
+Doctor: You said there had been no blood. Have you ever seen even a small streak of red or pink in the phlegm?
+Patient: There was one morning when I noticed two pink lines in it, but I had been coughing very hard.
+Doctor: When did that happen?
+Patient: About three weeks ago. It only happened once.
+Doctor: Did it look like fresh blood?
+Patient: Yes, probably. I showed my daughter because it frightened me.
+Doctor: Are there any other major medical conditions that you are being treated for?
+Patient: I have type 2 diabetes, high blood pressure and an irregular heartbeat.
+Doctor: Is the irregular heartbeat atrial fibrillation?
+Patient: Yes, that is the name of it.
+Doctor: Do you take a blood thinner?
+Patient: I take rivaroxaban every evening. I also take metformin, amlodipine and the inhalers.
+Doctor: Have you had a previous heart attack, stroke or any kidney problems?
+Patient: No heart attack or stroke. My GP once said my kidneys were working a little more slowly than before, but nobody has called it kidney disease.
+Doctor: How worried are you about the lung nodule now?
+Patient: I keep telling my family that I am not worried, but I have been awake most nights thinking about it. I searched online and ended up reading stories about people who had months to live.
+Doctor: Because you are currently having cigarettes again, would you like support to stop?
+Patient: I am not sure. I know I should, but they are one of the few things that calm me down. Perhaps later. Let me get through this appointment first, and then I might think about it.

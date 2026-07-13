@@ -1,0 +1,20 @@
+{
+  "simple": {
+    "PN1": "green", "PN2": "green", "PN3": "green", "PN4": "green",
+    "PN5": "green", "PN6": "orange", "PN7": "green", "PN8": "red",
+    "PN9": "green", "PN10": "green", "PN11": "green", "PN12": "red",
+    "PN13": "green", "PN14": "green", "PN15": "green", "PN16": "grey"
+  },
+  "mild": {
+    "PN1": "green", "PN2": "green", "PN3": "green", "PN4": "green",
+    "PN5": "red", "PN6": "green", "PN7": "green", "PN8": "green",
+    "PN9": "green", "PN10": "orange", "PN11": "green", "PN12": "red",
+    "PN13": "green", "PN14": "green", "PN15": "green", "PN16": "orange"
+  },
+  "complex": {
+    "PN1": "green", "PN2": "orange", "PN3": "orange", "PN4": "orange",
+    "PN5": "orange", "PN6": "orange", "PN7": "orange", "PN8": "orange",
+    "PN9": "orange", "PN10": "orange", "PN11": "orange", "PN12": "orange",
+    "PN13": "orange", "PN14": "orange", "PN15": "green", "PN16": "red"
+  }
+}

@@ -52,6 +52,7 @@ button:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}
 #transcript .line{margin-bottom:9px;padding:7px 10px;border-radius:6px;background:var(--panel2);border:1px solid var(--line)}
 #transcript .who{font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--brand);font-weight:700;display:block;margin-bottom:2px}
 #transcript .who.pt{color:var(--brand-purple)}
+#transcript .ts{float:right;color:var(--faint);font-weight:400;font-size:10px;letter-spacing:0;text-transform:none}
 #transcript .interim{opacity:.6;font-style:italic}
 .empty{color:var(--faint);font-style:italic;padding:6px 2px}
 
@@ -181,9 +182,10 @@ a{color:var(--brand)}
 .tile.red{border-top-color:var(--red);background:var(--red-bg)}
 .tile.orange{border-top-color:var(--orange);background:var(--orange-bg)}
 .tile.green{border-top-color:var(--green);background:var(--green-bg)}
+.tile.grey{border-top-color:#aeb7bd;background:var(--grey-bg)}
 .tile-top{display:flex;align-items:center;gap:6px}
 .tile-badge{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:1px 6px;border-radius:4px}
-.tile-badge.red{background:var(--red);color:#fff}.tile-badge.orange{background:var(--orange);color:#212b32}.tile-badge.green{background:var(--green);color:#fff}
+.tile-badge.red{background:var(--red);color:#fff}.tile-badge.orange{background:var(--orange);color:#212b32}.tile-badge.green{background:var(--green);color:#fff}.tile-badge.grey{background:var(--grey);color:#fff}
 .tile-id{margin-left:auto;font-size:9px;color:var(--faint);font-weight:700}
 .tile-label{font-weight:700;font-size:12.5px;line-height:1.25}
 .tile-sum{font-size:11px;color:var(--txt)}
@@ -194,3 +196,20 @@ a{color:var(--brand)}
 .post-2col{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
 @media(max-width:1000px){.post-2col{grid-template-columns:1fr}}
 .summary{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;white-space:pre-wrap;margin:0;color:var(--txt);line-height:1.55}
+
+/* ---- session name + saved consultations ---- */
+.sess-name{padding:7px 10px;border:1px solid var(--line);border-radius:5px;font-family:inherit;font-size:13px;font-weight:600;color:var(--txt);background:#fff;min-width:260px}
+.sess-name:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 2px rgba(0,94,184,.15)}
+.sess-list{max-height:340px;overflow-y:auto;margin-bottom:12px}
+.sess-row{display:flex;align-items:center;gap:8px;padding:9px 10px;border:1px solid var(--line);border-radius:6px;margin-bottom:7px;background:#fff}
+.sess-main{flex:1;min-width:0}
+.sess-name-t{font-weight:700;font-size:13px;color:var(--txt)}
+.sess-meta{font-size:11px;color:var(--muted);margin-top:2px}
+
+/* ---- welcome steps ---- */
+.steps{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+.step{display:flex;gap:10px;align-items:flex-start;font-size:13px;line-height:1.5}
+.step-n{flex:0 0 auto;width:22px;height:22px;border-radius:50%;background:var(--brand);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.k-red{color:var(--red);font-weight:700}
+.k-amber{color:var(--amber-txt);font-weight:700}
+.k-green{color:var(--green);font-weight:700}

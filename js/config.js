@@ -5,13 +5,14 @@
    the rule set can be edited without touching application logic.
    ============================================================ */
 
-/* Default patient context (would be supplied by an EHR integration). */
-const EHR_DEFAULTS = { age: '67', sex: 'Male' };
+/* Default patient context. Blank by default so nothing is shown until it is
+   actually stated in the consultation, typed in, or supplied by an EHR. */
+const EHR_DEFAULTS = { age: '', sex: '' };
 
 /* AI connection defaults (from secrets.js).
-   - If AI_PROXY_URL is set, calls go through your proxy (key hidden server-side)
-     — this is what makes AI "just work" for everyone on a shared link.
-   - Otherwise, if OPENAI_API_KEY is set, calls go direct to OpenAI (local use). */
+   - If AI_PROXY_URL is set, AI works automatically via your proxy with NO key
+     in this file (the key lives in the Cloudflare Worker).
+   - Otherwise, if OPENAI_API_KEY is set, calls go direct to OpenAI. */
 const AI_DEFAULTS = (() => {
   const proxy = (typeof AI_PROXY_URL !== 'undefined' && AI_PROXY_URL.trim()) ? AI_PROXY_URL.trim() : '';
   const key = (typeof OPENAI_API_KEY !== 'undefined' && OPENAI_API_KEY.trim()) ? OPENAI_API_KEY.trim() : '';
@@ -141,8 +142,8 @@ const SMOKING = {
   // any reference to smoking, so colloquial quit phrases ("off the fags") are still in scope
   mention: /smok|cigarett|\bcigs?\b|\bciggies?\b|\bfags?\b|roll[- ]?ups?|tobacco|nicotine|vap(?:e|ing|ed)|the odd one|packed (?:it|them) in/,
   never:   /never smok|never touched (?:a )?(?:cigarett|fag|ciggie|one)|non-?smoker|not a smoker|never been a smoker|never have(?: smoked)?|don'?t smoke and never/,
-  current: /current smoker|i still smoke|still smoking|still smoke|i'?m a smoker|smoke a bit (?:right )?now|i smoke a bit|i smoke about|i smoke around|i smoke \d|smoke every day|i do smoke|i still have|the odd (?:one|cigarette|fag|ciggie)|social smoker|have a few|a few a day|couple a day|couple of a day|still light up|still partial|haven'?t quit|haven'?t stopped|i vape|i'?m vaping/,
-  former:  /former smoker|ex-?smoker|used to smoke|i quit|quit smoking|stopped smoking|stopped in (?:19|20)\d{2}|gave up smoking|gave it up|gave up|given (?:up|them up)|i used to smoke|i stopped|i did stop|i have stopped|i don'?t smoke (?:now|any ?more)|packed (?:it|them|the fags|the cigarettes) in|jacked (?:it|them) in|knocked it on the head|kicked the habit|off the (?:fags|cigs|ciggies)|binned (?:it|them|the fags)|chucked (?:it|them) in|came off (?:them|the fags)|haven'?t (?:touched|had|smoked) (?:one|a cigarette|a fag|since|in years|for years)|not (?:smoked|touched one) (?:since|for years|in years)|don'?t touch them now/,
+  current: /current smoker|currently smoking|i still smoke|still smoking|still kind of smok|still smoke|i'?m a smoker|smoke a bit (?:right )?now|i smoke a bit|i smoke about|i smoke around|i smoke \d|smoke every day|i do smoke|i still have|had a few cigarettes|the odd (?:one|cigarette|fag|ciggie)|social smoker|have a few|a few a day|couple a day|couple of a day|still light up|still partial|haven'?t quit|haven'?t stopped|i vape|i'?m vaping/,
+  former:  /former smoker|ex-?smoker|used to smoke|i smoked (?:\d|about|around|roughly|like|a|when|for|years|back)|back in the day|i quit|quit smoking|quit when|quit at|quit years|quit a while|quit \d|stopped smoking|stopped in (?:19|20)\d{2}|gave up smoking|gave it up|gave up|given (?:up|them up)|i used to smoke|i stopped|i did stop|i have stopped|i don'?t smoke (?:now|any ?more)|packed (?:it|them|the fags|the cigarettes) in|jacked (?:it|them) in|knocked it on the head|kicked the habit|off the (?:fags|cigs|ciggies)|binned (?:it|them|the fags)|chucked (?:it|them) in|came off (?:them|the fags)|haven'?t (?:touched|had|smoked) (?:one|a cigarette|a fag|since|in years|for years)|not (?:smoked|touched one) (?:since|for years|in years)|don'?t touch them now/,
 };
 function _smokingStatus(t) {
   if (!SMOKING.mention.test(t)) return { value: null, corrected: false };
@@ -177,6 +178,24 @@ function extractPatientContext(t) {
   return out;
 }
 
+/* Convert spelled-out numbers to digits so the rules can read natural speech
+   ("fifteen a day", "seven years ago", "fifty-eight" → 15, 7, 58). */
+const _NUMWORDS = { zero:0, one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9,
+  ten:10, eleven:11, twelve:12, thirteen:13, fourteen:14, fifteen:15, sixteen:16, seventeen:17,
+  eighteen:18, nineteen:19, twenty:20, thirty:30, forty:40, fifty:50, sixty:60, seventy:70, eighty:80, ninety:90 };
+function _normalizeNumbers(t) {
+  // compounds first: "fifty-eight" / "fifty eight" → 58
+  t = t.replace(/\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)[\s-](one|two|three|four|five|six|seven|eight|nine)\b/g,
+    (m, a, b) => String(_NUMWORDS[a] + _NUMWORDS[b]));
+  // single words (keep "no one"/"any one"/"some one"/"every one" as words)
+  t = t.replace(/\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\b/g,
+    (m, w, off, s) => {
+      if (w === 'one' && /\b(no|any|some|every)\s$/.test(s.slice(Math.max(0, off - 6), off))) return m;
+      return String(_NUMWORDS[w]);
+    });
+  return t;
+}
+
 /* ---------- checklist configuration ----------
    Each entry: { id, label, prio, src, defaultPrompt, detect(lcText) }
    detect() returns { status, extracted?, evidence?, missing? }.        */
@@ -187,6 +206,17 @@ const CHECKLIST_CONFIG = [
       const s = _smokingStatus(t);
       const ev = _evidence(t, [/smok/, /cigarett/]);
       const tail = s.corrected ? ' (most recent statement used)' : '';
+      // Contradiction: describes present/occasional smoking (medically = current
+      // smoker) yet also says they quit / are former / never / "no".
+      const presentSmoking = /when i smoke\b|when i have a cigarette|have a cigarette\b|having a cigarette|having cigarettes|have cigarettes|if i smoke\b|the odd (?:one|cigarette|fag)|a few cigarettes|few cigarettes|couple of cigarettes|social(?:ly)? smok|smoke social|smoke socially|on nights out|when i (?:drink|go out)|nice having (?:a )?cigarette/;
+      const priorQuitClaim = s.value === 'former' || s.value === 'never'
+        || /in the past|used to|quit|gave up|gave it up|stopped smok|don'?t smoke/.test(t);
+      if (presentSmoking.test(t) && priorQuitClaim) {
+        return { status: 'orange', contradiction: true,
+          extracted: 'Describes current/occasional smoking but also says quit/never — clarify (occasional smoking still counts as current).',
+          evidence: _evidence(t, [presentSmoking]) || ev,
+          missing: 'Confirm current smoking status; occasional/social smoking = current smoker.' };
+      }
       if (s.value === 'current') return { status: 'green', extracted: 'Current smoker.' + tail, evidence: ev };
       if (s.value === 'former')  return { status: 'green', extracted: 'Former smoker.' + tail, evidence: ev };
       if (s.value === 'never')   return { status: 'green', extracted: 'Never smoker.' + tail, evidence: ev };
@@ -198,7 +228,7 @@ const CHECKLIST_CONFIG = [
     defaultPrompt: 'Roughly how many cigarettes a day did you smoke, and for how many years?',
     detect(t) {
       if (!SMOKING.mention.test(t)) return { status: 'red' };
-      if (_smokingStatus(t).value === 'never') return { status: 'green', extracted: 'Never smoker — pack-years not applicable.' };
+      if (_smokingStatus(t).value === 'never') return { status: 'grey', extracted: 'Never smoker — pack-years not applicable.' };
       const py = t.match(/(\d+)\s*pack[- ]?years?/);
       const perDayM = t.match(/(\d+)\s*(?:a day|per day|cigarettes? a day|\/day|cigs? a day|fags? a day|roll[- ]?ups? a day|ciggies? a day|daily)/);
       let perDay = perDayM ? +perDayM[1] : null;
@@ -206,16 +236,24 @@ const CHECKLIST_CONFIG = [
       if (perDay == null && /(?:a|one) pack a day|a packet a day|pack a day|20 a day/.test(t)) perDay = 20;
       if (perDay == null && /half a pack a day|ten a day|10 a day/.test(t)) perDay = 10;
       if (perDay == null && /two packs a day|40 a day|2 packs/.test(t)) perDay = 40;
-      const yrsM = t.match(/(?:for|over|about|around)?\s*(\d+)\s*years?/) || t.match(/since i was (\d+)/);
-      const sinceAge = /since i was (\d+)/.test(t);
-      let yrs = yrsM ? +yrsM[1] : null;
-      const ev = _evidence(t, [/pack[- ]?year/, /\d+\s*(?:a day|per day|\/day|fags|roll|ciggies)/, /\d+\s*years/, /pack a day/, /since i was/]);
+      // Smoking DURATION in years. Priority: explicit range → start/stop ages →
+      // "for N years" (never "N years ago", which is time SINCE quitting).
+      const range = t.match(/(?:between (?:the )?ages? of (?:the )?|from (?:the )?(?:age )?)(\d{1,2})\s*(?:and|to|until|till|-)\s*(?:the )?(\d{1,2})/);
+      const startAge = t.match(/start(?:ed)?[^.]{0,18}?(?:when i was|at the age of|at age|aged)\s*(?:about |around )?(\d{1,2})\b/);
+      const stopAge = t.match(/(?:stopped|quit|gave up|gave it up|packed it in)[^.]{0,25}?(?:when i was|at the age of|at age|aged)\s*(?:about |around )?(\d{1,2})\b/);
+      const forYears = t.match(/(?:for|over)\s*(?:about |around )?(\d+)\s*years?/) || t.match(/(\d+)\s*years?(?!\s*(?:ago|old))/);
+      const sinceAgeM = t.match(/since i was (\d+)/);
+      let yrs = null;
+      if (range) yrs = Math.abs(+range[2] - +range[1]);
+      else if (startAge && stopAge) yrs = Math.abs(+stopAge[1] - +startAge[1]);
+      else if (forYears) yrs = +forYears[1];
+      const ev = _evidence(t, [/pack[- ]?year/, /\d+\s*(?:a day|per day|\/day|fags|roll|ciggies)/, /\d+\s*years/, /pack a day/, /when i was/]);
       if (py) return { status: 'green', extracted: `Approx ${py[1]} pack-years.`, evidence: ev };
-      if (perDay && yrs && !sinceAge) {
+      if (perDay && yrs) {
         const pk = Math.round((perDay / 20) * yrs);
         return { status: 'green', extracted: `${perDay}/day for ${yrs} years ≈ ${pk} pack-years.`, evidence: ev };
       }
-      if (perDay && sinceAge) return { status: 'green', extracted: `${perDay}/day since age ${yrs}.`, evidence: ev };
+      if (perDay && sinceAgeM) return { status: 'green', extracted: `${perDay}/day since age ${sinceAgeM[1]}.`, evidence: ev };
       return { status: 'orange', extracted: 'Smoking acknowledged but amount/duration not quantified.', evidence: _evidence(t, [SMOKING.mention]), missing: 'Cigarettes per day and number of years (pack-years) not captured.' };
     } },
 
@@ -223,8 +261,8 @@ const CHECKLIST_CONFIG = [
     defaultPrompt: 'When did you stop smoking?',
     detect(t) {
       const s = _smokingStatus(t);
-      if (s.value === 'current') return { status: 'green', extracted: 'Current smoker — quit date not applicable.' };
-      if (s.value === 'never') return { status: 'green', extracted: 'Never smoker — not applicable.' };
+      if (s.value === 'current') return { status: 'grey', extracted: 'Current smoker — quit date not applicable.' };
+      if (s.value === 'never') return { status: 'grey', extracted: 'Never smoker — not applicable.' };
       if (s.value !== 'former') return { status: 'red' };   // only relevant once they're a (settled) former smoker
       const yr = t.match(/(?:stopped|quit|gave up|given up|packed (?:it|them) in|jacked (?:it|them) in|kicked the habit|binned them|came off them|since)\D{0,14}(19|20)\d{2}/);
       const ago = t.match(/(\d+)\s*years? ago/) || t.match(/(?:stopped|quit|packed it in|gave up|kicked)\D{0,14}(\d+)\s*years? ago/);
@@ -286,11 +324,14 @@ const CHECKLIST_CONFIG = [
       const ev = _evidence(t, [/(father|mother|brother|sister|dad|mum|mom|parent|grandfather|grandmother|gran|nan|old man|sibling|aunt|uncle|family).{0,40}(lung cancer|cancer)/, /family history/]);
       if (/no family history|no one in (?:my|the) family|nobody in (?:my|the) family|no family.{0,20}lung cancer|none of (?:my|the) family/.test(t))
         return { status: 'green', extracted: 'No family history of lung cancer.', evidence: ev };
-      const rel = t.match(/(father|mother|brother|sister|dad|mum|mom|parent|grandfather|grandmother|gran|grandad|grandma|nan|old man|sibling|aunt|uncle|cousin).{0,40}lung cancer/)
-        || (/lung cancer.{0,30}(father|mother|brother|sister|dad|mum|mom|gran|nan|aunt|uncle)/.test(t) ? [null, t.match(/lung cancer.{0,30}(father|mother|brother|sister|dad|mum|mom|gran|nan|aunt|uncle)/)[1]] : null);
+      const relWord = '(father|mother|brother|sister|dad|mum|mom|parent|grandfather|grandmother|gran|grandad|grandma|nan|old man|sibling|aunt|uncle|cousin)';
+      // relative → "lung cancer" stated close together, both directions
+      const rel = t.match(new RegExp(relWord + '[^.]{0,40}lung cancer'))
+        || (new RegExp('lung cancer[^.]{0,25}' + relWord).test(t) ? [null, t.match(new RegExp('lung cancer[^.]{0,25}' + relWord))[1]] : null);
       if (rel) return { status: 'green', extracted: `Relative (${rel[1]}) had lung cancer.`, evidence: ev };
-      if (/cancer.{0,15}(?:in (?:my|the) )?family|family.{0,15}cancer|runs in (?:my|the) family|in the family/.test(t))
-        return { status: 'orange', extracted: 'Family cancer history mentioned but lung cancer / relationship not clarified.', evidence: ev, missing: 'Was it lung cancer, and which relative?' };
+      // relative had *some* cancer, or a lung tumour that may not be a primary — needs clarifying
+      if (new RegExp(relWord + '[^.]{0,50}(cancer|tumour|tumor|growth)').test(t) || /cancer.{0,15}(?:in (?:my|the) )?family|family.{0,15}cancer|runs in (?:my|the) family|in the family/.test(t))
+        return { status: 'orange', extracted: 'Family cancer mentioned, but lung-primary / relationship not confirmed.', evidence: ev, missing: 'Was it primary lung cancer, and which relative?' };
       return { status: 'red' };
     } },
 
@@ -313,8 +354,8 @@ const CHECKLIST_CONFIG = [
   { id: 'PN8', label: 'Haemoptysis (coughing blood)', prio: 'Critical', src: ['BTS', 'Herder/Mayo'],
     defaultPrompt: 'Have you coughed up any blood?',
     detect(t) {
-      if (/no h?aemoptysis|no blood|not coughed up.{0,10}blood|denies h?aemoptysis|haven'?t coughed up.{0,10}blood|never coughed up blood|no, nothing like that/.test(t))
-        return { status: 'green', extracted: 'No haemoptysis.', evidence: _evidence(t, [/blood|h?aemoptysis/]) };
+      if (/no h?aemoptysis|no blood|not coughed up.{0,10}blood|denies h?aemoptysis|haven'?t coughed up.{0,10}blood|never coughed up blood|no red|no spots of red|(?:blood|red|streak|pink).{0,20}\bno\b|red or anything.{0,4}no|spots of red or anything no/.test(t))
+        return { status: 'green', extracted: 'No haemoptysis (blood/red denied).', evidence: _evidence(t, [/blood|h?aemoptysis|red|phlegm|sputum/]) };
       if (/coughed up blood|cough up blood|coughing (?:up )?blood|blood.streaked|spitting blood|spit blood|blood when i cough|blood in (?:my )?(?:phlegm|sputum|spit)|pink phlegm|rusty phlegm|red in (?:my )?phlegm|h?aemoptysis/.test(t))
         return { status: 'green', extracted: 'Haemoptysis reported.', evidence: _evidence(t, [/blood|h?aemoptysis|phlegm|sputum|spit/]) };
       if (/phlegm|sputum|spit/.test(t) && /dark|colour|color|funny|odd|brown/.test(t))
@@ -338,9 +379,11 @@ const CHECKLIST_CONFIG = [
   { id: 'PN10', label: 'Systemic symptoms', prio: 'Important', src: ['BTS'],
     defaultPrompt: 'Any unexplained weight loss, night sweats, fevers, reduced appetite or fatigue?',
     detect(t) {
-      const sym = /weight loss|lost.{0,6}(kg|stone|pounds|weight)|losing weight|clothes.{0,12}loose|night sweat|sweat\w* at night|drenching sweat|fever|temperature|appetite|off my food|fatigue|tired all|knackered|no energy|worn out|wiped out/;
+      const sym = /weight loss|lost.{0,6}(kg|stone|pounds|weight)|losing weight|put on weight|gained weight|gaining weight|weigh(?:ed|s)?\s*\d+|\d+\s*(?:kg|kilo|kilos|kilograms|stone|pounds)|clothes.{0,12}loose|night sweat|sweat\w* at night|drenching sweat|fever|temperature|appetite|off my food|fatigue|tired all|knackered|no energy|worn out|wiped out/;
       if (!sym.test(t)) return { status: 'red' };
       const ev = _evidence(t, [sym]);
+      const weightGain = /put on weight|gained weight|gaining weight|weigh.{0,6}(?:more|\d)|\d+\s*kilograms?/.test(t) && !/weight loss|lost.{0,6}weight/.test(t);
+      if (weightGain) return { status: 'green', extracted: 'Weight discussed — gain/stable, no unexplained loss.', evidence: ev };
       if (/lost \d|lost (?:a lot of |some )?weight|clothes.{0,12}loose|night sweat|drenching|fever|high temperature|no weight loss|no night sweat|no appetite/.test(t))
         return { status: 'green', extracted: 'Systemic symptoms characterised.', evidence: ev };
       if (/felt off|not myself|run down|bit tired|a bit off/.test(t))
@@ -416,13 +459,15 @@ const CHECKLIST_CONFIG = [
   { id: 'PN16', label: 'Smoking cessation opportunity', prio: 'Supportive', src: ['BTS'],
     defaultPrompt: 'Would you like support to stop smoking?',
     detect(t) {
-      if (_smokingStatus(t).value === 'never') return { status: 'green', extracted: 'Never smoker — cessation not applicable.' };
+      const sv = _smokingStatus(t).value;
+      if (sv === 'never') return { status: 'grey', extracted: 'Never smoker — cessation not applicable.' };
       if (!SMOKING.mention.test(t)) return { status: 'red' };
       const ev = _evidence(t, [/cessation|stop smoking|quit|give up|patches|referral|nicotine/]);
       if (/accepts? referral|wants? to (?:stop|quit|give up)|like (?:help )?to (?:stop|quit|give up)|help (?:me )?(?:stop|quit|give up)|cessation|quit support|referral to stop|patches|nicotine replacement|stop[- ]smoking service/.test(t))
         return { status: 'green', extracted: 'Cessation support offered/accepted.', evidence: ev };
-      if (/maybe later|not now|think about it|not ready|not interested/.test(t))
-        return { status: 'orange', extracted: 'Cessation raised but undecided.', evidence: ev, missing: 'Offer referral to stop-smoking service.' };
-      return { status: 'red' };
+      if (/maybe later|perhaps later|not now|think about it|not ready|not interested/.test(t))
+        return { status: 'orange', extracted: 'Cessation raised but patient undecided.', evidence: ev, missing: 'Offer referral to stop-smoking service.' };
+      if (sv === 'former') return { status: 'grey', extracted: 'Former smoker — cessation not currently applicable.' };
+      return { status: 'red' };   // current/unclear smoker, cessation not yet offered
     } },
 ];

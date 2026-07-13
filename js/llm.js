@@ -41,11 +41,13 @@ class LlmRefiner {
       '2. A combined clinician question (e.g. "any cancer, and any family lung cancer?") that the patient answers in one sentence still counts as answered for each part.',
       '3. Attribute facts to the right person. A relative\'s cancer answers FAMILY history (PN6), not the patient\'s own cancer (PN4/PN5), and vice versa.',
       '4. SELF-CORRECTION — recency wins. If the patient changes their mind or corrects themselves, the MOST RECENT statement is the truth; earlier contradicted statements are superseded. Watch for cues like "actually", "no", "sorry", "wait", "I mean". Example: "I stopped in 2014... actually no, I still smoke a bit now" => smoking status = current (green), and quit date = not applicable. If their final position is genuinely unresolved ("maybe I do, maybe I don\'t"), use orange.',
+      '5. CONTRADICTIONS — if the patient gives genuinely conflicting information for an item that is NOT a clear self-correction, mark that item ORANGE and put a short note in "missing" naming the conflict. Do not silently pick a side. KEY SMOKING CASE: occasional / social / intermittent smoking (even a few a week, "having a cigarette in the sun", "the odd one on nights out") is CURRENT smoking per clinical guidelines. So if the patient says they do NOT smoke or have quit / are former, but ELSEWHERE mentions ANY current cigarette use — e.g. "I cough when I smoke", "when I have a cigarette", "having cigarettes", "I smoke socially", "the odd one" — treat smoking status as a contradiction → ORANGE, note "says quit/no but describes current smoking — clarify". Also: denies cancer then describes one. Use ORANGE only for a real missing detail or contradiction, never for minor wording.',
+      '6. WORDING — keep "extracted" to ONE short, clear clinical phrase (e.g. "Former smoker, ~20/day for 20 years, quit in 40s"). Never write contradictory or nonsensical phrasings such as "never smoked currently, former smoker". If the facts conflict, say so plainly in the contradiction note rather than jamming both into one description.',
       '',
       'PER-ITEM RUBRIC (key items):',
       'PN1 Smoking status: GREEN if current / former / never is clear.',
       'PN2 Pack-years: GREEN only if amount/duration or pack-years given; otherwise ORANGE if ever-smoker.',
-      'PN3 Quit date: GREEN if approximate year or years-ago given; ORANGE if former but no date.',
+      'PN3 Quit date: If the patient is a CURRENT smoker or a NEVER smoker, quit date is NOT APPLICABLE → GREEN (never red/orange). If a FORMER smoker: GREEN when an approximate year/years-ago is given, otherwise ORANGE.',
       'PN4 Previous cancer: GREEN if the patient states their own cancer type + approx year + treatment/status, OR clearly states none. A relative\'s cancer does NOT make PN4 green.',
       'PN5 Previous LUNG cancer (patient\'s own): GREEN only if patient confirms or denies personal lung cancer. A father/relative with lung cancer does NOT make PN5 green.',
       'PN6 Family history of lung cancer: GREEN if the patient says a specific relative did, or did not, have lung cancer. Example GREEN: "my father had lung cancer at 68" (relative=father, lung cancer=yes). ORANGE only if family cancer is mentioned without specifying lung cancer or the relative (e.g. "cancer runs in the family").',
@@ -110,18 +112,35 @@ class LlmRefiner {
       for (const it of (parsed.items || [])) {
         const r = engine.results[it.id];
         if (!r || !['red', 'orange', 'green'].includes(it.status)) continue;
-        if (it.status !== r.status) {
+        if (r.status === 'grey') continue;   // "not applicable" is definitive — AI can't override it
+        // Guard: the rules are a confidence FLOOR. The AI may raise a status
+        // (e.g. catch a red the rules missed) or refine wording, but must never
+        // pull a status BELOW the rules result — this stops the AI turning good
+        // rule matches (computed pack-years, denied blood, etc.) back to amber.
+        const RANK = { red: 0, orange: 1, green: 2 };
+        const rulesStatus = r.status;
+        let applied = RANK[it.status] >= RANK[rulesStatus] ? it.status : rulesStatus;
+        // a rules-detected contradiction stays flagged — the AI can't clear it to green
+        if (r.contradiction && applied === 'green') applied = 'orange';
+        // the AI's call is "used" when the applied status equals what it asked
+        // for (agreement or a genuine upgrade). When the floor/contradiction
+        // overrode it, we keep the rules' wording instead.
+        const useAiText = (applied === it.status);
+        if (applied !== rulesStatus) {
           const meta = engine.items.find(x => x.id === it.id);
-          audit.record({ id: it.id, label: (meta ? meta.label : it.id), status: it.status + ' (AI)', evidence: it.evidence });
-          engine.prevStatus[it.id] = it.status;
+          audit.record({ id: it.id, label: (meta ? meta.label : it.id), status: applied + ' (AI)', evidence: it.evidence });
+          engine.prevStatus[it.id] = applied;
           changed = true;
         }
-        r.status = it.status;
-        if (it.extracted) r.extracted = it.extracted;
-        if (it.evidence) r.evidence = it.evidence;
-        // accept a "missing detail" only when meaningful and the item isn't complete
+        r.status = applied;
+        if (useAiText) {   // let the AI correct wording/content (e.g. a late-revealed cancer)
+          if (it.extracted) r.extracted = it.extracted;
+          if (it.evidence) r.evidence = it.evidence;
+        }
         const junk = /^(n\/?a|none|nil|not applicable|-|—)\.?$/i;
-        r.missing = (it.status !== 'green' && it.missing && !junk.test(it.missing.trim())) ? it.missing : null;
+        if (applied === 'green') r.missing = null;
+        else if (useAiText && it.missing && !junk.test(it.missing.trim())) r.missing = it.missing;
+        // else keep the rules' "missing" note (e.g. a contradiction flag)
         r.engine = 'ai';                 // mark provenance for the UI
       }
       this.lastRefinedAt = AuditLog.now();

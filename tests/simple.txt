@@ -1,0 +1,54 @@
+Doctor: Good morning, Mr Carter. My name is Dr Shah, and I am one of the respiratory doctors. How are you feeling today?
+Patient: I am all right, thank you. A little nervous, to be honest. I was not expecting to be sent to a lung clinic.
+Doctor: You have been referred because a recent scan showed a small area in the lung called a pulmonary nodule. Today I would like to understand more about your general health.
+Patient: All right. I was worried that being sent here meant somebody already thought it was cancer.
+Doctor: No conclusion has been reached from the referral alone. Has anybody explained the reason for the appointment to you before today?
+Patient: My GP said that something small had appeared on the scan, but that was about all I understood.
+Doctor: To begin with, have you ever smoked?
+Patient: Yes, I used to smoke, but I do not smoke anymore.
+Doctor: Roughly how old were you when you started, and when did you stop?
+Patient: I started when I was about twenty. I stopped seven years ago, when I was fifty-eight.
+Doctor: During the years that you smoked, approximately how many cigarettes would you have had each day?
+Patient: Usually about fifteen a day. It could be closer to twenty if I was out with friends, but fifteen would be a fair average.
+Doctor: Have you remained completely smoke-free since stopping?
+Patient: Yes. I have not had a cigarette since then. It was difficult for the first few months, but I have not gone back to it.
+Doctor: Moving on to your breathing, have you noticed any new cough, shortness of breath, chest discomfort or wheezing recently?
+Patient: I have had a dry cough for about two months. It is not constant, but my wife says she notices it more in the evenings.
+Doctor: Was there anything happening around the time the cough began?
+Patient: I had a fairly bad chest infection about six weeks ago. I had a temperature and was bringing up green phlegm, so my GP gave me antibiotics.
+Doctor: Do you remember which antibiotic you were prescribed?
+Patient: I think it was doxycycline. I took it for seven days, and the green phlegm and temperature settled.
+Doctor: What about breathlessness?
+Patient: I am comfortable walking on level ground, but I become short of breath when I walk quickly or go uphill.
+Doctor: Do you experience any chest pain or wheezing when that happens?
+Patient: No chest pain. I sometimes wheeze when the weather is cold, but not every day.
+Doctor: Have you previously been diagnosed with a condition such as COPD or emphysema?
+Patient: Yes, my GP told me I had mild COPD in 2021. I use a tiotropium inhaler every morning and a blue inhaler when I need it.
+Doctor: How often do you need the blue inhaler?
+Patient: Usually only once or twice a week. I might use it more if I have a cold.
+Doctor: Have you experienced any unexplained weight loss, loss of appetite, fevers, night sweats or unusual tiredness?
+Patient: No, my weight has been steady and I am eating normally. I have not had any more fevers since the chest infection, and I have not had night sweats.
+Doctor: Have you felt more tired than usual?
+Patient: I have been tired this week, but I think that is because I have not been sleeping properly since receiving the hospital letter.
+Doctor: Have you ever been diagnosed with any form of cancer in the past?
+Patient: No, I have never had cancer.
+Doctor: Have you ever had lung cancer or previously been investigated for a suspicious growth in the lung?
+Patient: No, nothing like that. This is the first time anyone has mentioned a nodule or anything abnormal in my lungs.
+Doctor: Has anyone in your close family had lung cancer?
+Patient: My older brother had cancer a few years ago. They said it was somewhere in his chest, but I am not certain whether it started in his lung or spread there from somewhere else.
+Doctor: Do you know what type of cancer it was?
+Patient: I am afraid I do not. We were not particularly close at the time, and he did not speak much about it.
+Doctor: Are there any other major medical conditions that you are being treated for?
+Patient: I have high blood pressure and atrial fibrillation. The atrial fibrillation was diagnosed about three years ago.
+Doctor: What medication do you take for those conditions?
+Patient: I take ramipril for my blood pressure, bisoprolol and apixaban. Then I have the two inhalers for the COPD.
+Doctor: Have you had any previous heart attacks, strokes or kidney problems?
+Patient: No heart attacks or strokes, and nobody has told me that I have a kidney problem.
+Doctor: How far could you comfortably walk before needing to stop?
+Patient: On level ground, I could probably walk for twenty or thirty minutes without stopping. I walk to the shops most days.
+Doctor: Are you able to climb a flight of stairs?
+Patient: Yes, I can climb one flight. I am usually breathing more heavily by the top, but I do not need to stop halfway.
+Doctor: How worried are you about the nodule at the moment?
+Patient: Quite worried. Since receiving the letter, my mind has gone straight to the worst possibility.
+Doctor: A pulmonary nodule does not automatically mean cancer, and many nodules are benign.
+Patient: That is reassuring. I would rather know what is happening than be left wondering.
