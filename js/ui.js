@@ -65,8 +65,9 @@ class UIRenderer {
     this.refs.critText.className = 'crit ' + (critMissing ? 'crit-bad' : 'crit-ok');
   }
 
-  /* Copy-pasteable draft summary for the clinical notes. */
-  buildSummary(engine, ehr, radiology, sessionName) {
+  /* Copy-pasteable draft summary for the clinical notes.
+     `side` selects which extra sections to include (nodule adds radiology). */
+  buildSummary(engine, ehr, radiology, sessionName, side = 'nodule') {
     const now = new Date().toLocaleString('en-GB');
     const lines = [];
     lines.push('OneMoreThing — consultation completeness summary (DRAFT — verify before use).');
@@ -85,17 +86,21 @@ class UIRenderer {
       lines.push(`- ${it.label}: ${ans}`);
     }
     lines.push('');
-    if (radiology.loaded) {
-      lines.push('Radiology (clinician-entered):');
-      for (const f of radiology.fields) {
-        const v = radiology.value(f.id);
-        if (v) lines.push(`- ${f.label}: ${v}`);
+    if (side === 'nodule') {
+      if (radiology.loaded) {
+        lines.push('Radiology (clinician-entered):');
+        for (const f of radiology.fields) {
+          const v = radiology.value(f.id);
+          if (v) lines.push(`- ${f.label}: ${v}`);
+        }
+      } else {
+        lines.push('Radiology: N/A (CT/PET not entered).');
       }
+      lines.push('');
+      lines.push('Risk score: not calculated — this tool checks information completeness only.');
     } else {
-      lines.push('Radiology: N/A (CT/PET not entered).');
+      lines.push('This tool checks whether the key asthma review questions were covered. It does not grade control or recommend treatment. Measurements (FeNO, spirometry, peak flow, skin-prick) are clinician-entered and not inferred from the conversation.');
     }
-    lines.push('');
-    lines.push('Risk score: not calculated — this tool checks information completeness only.');
     lines.push('All clinical decisions remain the responsibility of the treating clinician.');
     return lines.join('\n');
   }

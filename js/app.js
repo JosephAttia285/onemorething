@@ -36,6 +36,48 @@ class DemoPlayer {
   stop() { this.running = false; this.paused = false; this.i = 0; clearTimeout(this._timer); }
 }
 
+/* Each tab is a "template": a self-contained live-listening checklist.
+   They share the toolbar, mic, AI and saved-consultations plumbing, but
+   each keeps its own transcript/engine/audit so the two consultations
+   stay independent. `side` selects which side-panel to show. */
+const TEMPLATES = {
+  nodule: {
+    id: 'nodule',
+    label: 'Pulmonary Nodule',
+    tag: 'Pulmonary Nodule Clinic — consultation completeness assistant',
+    checklist: CHECKLIST_CONFIG,
+    demo: DEMO_SCRIPT,
+    side: 'nodule',
+    ehrDefaults: EHR_DEFAULTS,
+  },
+  asthma: {
+    id: 'asthma',
+    label: 'Paediatric Asthma',
+    tag: 'Paediatric Asthma Clinic — consultation completeness assistant',
+    checklist: ASTHMA_CHECKLIST,
+    demo: ASTHMA_DEMO_SCRIPT,
+    side: 'asthma',
+    ehrDefaults: { age: '', sex: '' },
+  },
+};
+
+/* Build the per-consultation model for one template. */
+function makeBoard(template) {
+  const items = template.checklist.map(cfg => new ChecklistItem(cfg));
+  const audit = new AuditLog();
+  const transcript = new TranscriptStore();
+  const radiology = new RadiologyReport(RAD_FIELDS);
+  const ehr = { ...template.ehrDefaults };
+  const engine = new RuleEngine(items, audit);
+  const readiness = new RiskReadiness(engine, ehr, radiology);
+  return {
+    template, items, audit, transcript, radiology, ehr, engine, readiness,
+    ehrAgeEdited: false, ehrSexEdited: false, finished: false,
+    sessionId: null, sessionStartedAt: null, sessionName: SessionStore.defaultName(),
+    _aiLastLen: 0,
+  };
+}
+
 class App {
   static AI_PAUSE_MS = 1400;    // fire ~1.4s after the speaker pauses (event-driven, per exchange)
   static AI_MAX_MS = 40000;     // rare safety net only for very long uninterrupted speech
@@ -53,31 +95,24 @@ class App {
       'readiness', 'radiology', 'audit', 'ehrAge', 'ehrSex', 'ehrNote', 'enginePill',
       'modal', 'llmEnabled', 'llmBase', 'llmModel', 'llmKey', 'llmStatus', 'llmTest', 'modalClose',
       'ctModal', 'ctText', 'ctFile', 'ctSample', 'ctExtractNote', 'ctClose', 'ctApply',
+      'brandTag', 'tabs', 'readinessPanel', 'asthmaPanel',
     ].forEach(id => { this.refs[id] = document.getElementById(id); });
 
-    // ----- model -----
-    this.items = CHECKLIST_CONFIG.map(cfg => new ChecklistItem(cfg));
-    this.audit = new AuditLog();
-    this.transcript = new TranscriptStore();
-    this.radiology = new RadiologyReport(RAD_FIELDS);
-    this.ehr = { ...EHR_DEFAULTS };
-    this.ehrAgeEdited = false;   // becomes true once the clinician edits the field by hand
-    this.ehrSexEdited = false;
+    // ----- boards (one live consultation per tab) -----
+    this.boards = { nodule: makeBoard(TEMPLATES.nodule), asthma: makeBoard(TEMPLATES.asthma) };
+    this.active = 'nodule';
+    this.board = this.boards[this.active];
+
+    // ----- app-level state (shared across tabs) -----
     this._micPaused = false;     // mic was paused via the Pause button (transcript kept)
     this._pip = null;            // floating mini-window handle
     this._miniRoot = null;
     this._autoMini = true;       // attempt to auto-open the floating window when hidden
-    this.finished = false;       // consultation stopped → post-consult view shown
     this.sessions = new SessionStore();
-    this.sessionId = null;
-    this.sessionStartedAt = null;
     this._aiInFlight = false;    // an AI check is currently running
     this._aiPending = false;     // new speech arrived while a check was running
-    this._aiLastLen = 0;         // transcript length at the last AI check
     this._aiPauseTimer = null;
     this._aiMaxTimer = null;
-    this.engine = new RuleEngine(this.items, this.audit);
-    this.readiness = new RiskReadiness(this.engine, this.ehr, this.radiology);
 
     // ----- services -----
     this.ui = new UIRenderer(this.refs);
@@ -87,13 +122,41 @@ class App {
       onInterim: (text) => this.ui.showInterim(text),
       onError: (err) => { if (err === 'unsupported') alert('Live speech recognition is not supported here. Please use Chrome, or run the demo.'); if (err === 'not-allowed') { alert('Microphone permission denied.'); this.ui.setMicState(false); } },
     });
-    this.demo = new DemoPlayer(DEMO_SCRIPT,
+    this.demo = this._makeDemo();
+  }
+
+  /* Per-consultation state lives on the active board; these accessors let the
+     rest of App keep saying this.transcript / this.engine / this.finished etc. */
+  get items() { return this.board.items; }
+  get audit() { return this.board.audit; }
+  get transcript() { return this.board.transcript; }
+  get radiology() { return this.board.radiology; }
+  get ehr() { return this.board.ehr; }
+  get engine() { return this.board.engine; }
+  get readiness() { return this.board.readiness; }
+  get finished() { return this.board.finished; }
+  set finished(v) { this.board.finished = v; }
+  get sessionId() { return this.board.sessionId; }
+  set sessionId(v) { this.board.sessionId = v; }
+  get sessionStartedAt() { return this.board.sessionStartedAt; }
+  set sessionStartedAt(v) { this.board.sessionStartedAt = v; }
+  get ehrAgeEdited() { return this.board.ehrAgeEdited; }
+  set ehrAgeEdited(v) { this.board.ehrAgeEdited = v; }
+  get ehrSexEdited() { return this.board.ehrSexEdited; }
+  set ehrSexEdited(v) { this.board.ehrSexEdited = v; }
+  get _aiLastLen() { return this.board._aiLastLen; }
+  set _aiLastLen(v) { this.board._aiLastLen = v; }
+
+  /* A demo player bound to the active board's script. */
+  _makeDemo() {
+    return new DemoPlayer(this.board.template.demo,
       (who, text) => { const t = this.transcript.addLine(who, text); this.ui.appendLine(who, text, t); this.refresh(); },
       () => { this.refs.demoBtn.disabled = false; this._updatePauseBtn(); this._consultEnd(); });
   }
 
   init() {
     this._wire();
+    this._wireTabs();
     // auto-connect AI if a key is present in secrets.js
     this.llm.configure(AI_DEFAULTS);
     this.refs.llmEnabled.checked = AI_DEFAULTS.enabled;
@@ -126,11 +189,75 @@ class App {
     this._applyContext();
     this.ui.renderTiles(this.engine);
     this.ui.renderProgress(this.engine);
-    this.ui.renderReadiness(this.readiness);
+    this._renderSide();
     this.ui.renderAudit(this.audit);
     if (this._miniRoot) this._renderMini();
-    if (this.finished) this.refs.summary.textContent = this.ui.buildSummary(this.engine, this.ehr, this.radiology, this._sessionLabel());
+    if (this.finished) this.refs.summary.textContent = this.ui.buildSummary(this.engine, this.ehr, this.radiology, this._sessionLabel(), this.board.template.side);
     this._scheduleAiCheck();
+  }
+
+  /* Render the side panel that matches the active board. */
+  _renderSide() {
+    if (this.board.template.side === 'nodule') this.ui.renderReadiness(this.readiness);
+  }
+
+  _emptyTranscriptMsg() {
+    return 'Transcript will appear here. Press “Start” to use your microphone, or “Play demo” to run the sample consultation.';
+  }
+
+  /* Repaint the transcript panel from the active board's stored lines. */
+  _restoreTranscriptDOM() {
+    this.ui.clearTranscript(this._emptyTranscriptMsg());
+    this.transcript.lines.forEach(l => this.ui.appendLine(l.speaker || 'Speaker', l.text, l.time));
+  }
+
+  _wireTabs() {
+    this.refs.tabs.addEventListener('click', (e) => {
+      const b = e.target.closest('.tab');
+      if (b && b.dataset.board) this.switchBoard(b.dataset.board);
+    });
+  }
+
+  /* Switch to another condition's tab. Each board keeps its own state,
+     so switching stops any live input but never loses a transcript. */
+  switchBoard(id) {
+    if (id === this.active || !this.boards[id]) return;
+    // stop live input on the board we're leaving
+    this.speech.stop(); this.ui.setMicState(false); this._micPaused = false;
+    this.demo.stop(); this.refs.demoBtn.disabled = false;
+    clearTimeout(this._aiPauseTimer); this._aiPauseTimer = null;
+    if (this._aiMaxTimer) { clearTimeout(this._aiMaxTimer); this._aiMaxTimer = null; }
+    this._aiInFlight = false; this._aiPending = false;
+    this.board.sessionName = this.refs.sessionName.value;   // stash the name field
+
+    // activate the target board
+    this.active = id;
+    this.board = this.boards[id];
+    this.demo = this._makeDemo();
+    const nodule = this.board.template.side === 'nodule';
+
+    // chrome: brand line, tab highlight, side panel, nodule-only toolbar button
+    this.refs.brandTag.textContent = this.board.template.tag;
+    this.refs.tabs.querySelectorAll('.tab').forEach(btn => {
+      const on = btn.dataset.board === id;
+      btn.classList.toggle('active', on);
+      btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    this.refs.readinessPanel.classList.toggle('hidden', !nodule);
+    this.refs.asthmaPanel.classList.toggle('hidden', nodule);
+    this.refs.ctBtn.classList.toggle('hidden', !nodule);
+
+    // repaint from the target board's state
+    this.refs.sessionName.value = this.board.sessionName;
+    this.refs.ehrAge.value = this.ehr.age;
+    this.refs.ehrSex.value = this.ehr.sex;
+    if (nodule) this.ui.renderRadiology(this.radiology);
+    this._restoreTranscriptDOM();
+    this._updatePauseBtn();
+    this.refs.liveDot.classList.remove('on');
+    this.refs.post.classList.toggle('hidden', !this.finished);
+    this.refresh();
+    if (this.finished) this.refs.summary.textContent = this.ui.buildSummary(this.engine, this.ehr, this.radiology, this._sessionLabel(), this.board.template.side);
   }
 
   /* ---- efficient AI checking ----
@@ -153,15 +280,17 @@ class App {
     if (!force && len - this._aiLastLen < App.AI_MIN_DELTA) return;    // skip if nothing meaningful is new
     this._aiInFlight = true;
     this._aiLastLen = len;
+    const board = this.board;   // remember which board this check belongs to
     this.ui.setEnginePill('busy', '● AI checking…');
-    this.llm.refine(this.transcript, this.engine, this.audit).then(() => {
+    this.llm.refine(board.transcript, board.engine, board.audit).then(() => {
+      this._aiInFlight = false;
+      if (this.board !== board) return;   // user switched tabs mid-call — don't repaint the wrong board
       this.ui.renderTiles(this.engine);
       this.ui.renderProgress(this.engine);
-      this.ui.renderReadiness(this.readiness);
+      this._renderSide();
       this.ui.renderAudit(this.audit);
-      if (this.finished) this.refs.summary.textContent = this.ui.buildSummary(this.engine, this.ehr, this.radiology, this._sessionLabel());
+      if (this.finished) this.refs.summary.textContent = this.ui.buildSummary(this.engine, this.ehr, this.radiology, this._sessionLabel(), this.board.template.side);
       this._updateEnginePill();
-      this._aiInFlight = false;
       if (this.finished) this._saveSession();   // keep the saved copy in step with the AI's final view
       if (this._aiPending) { this._aiPending = false; this._scheduleAiCheck(); }   // new speech arrived mid-call
     });
@@ -190,7 +319,7 @@ class App {
     this.refs.liveDot.classList.remove('on');
     if (!this.transcript.isEmpty) {
       this.finished = true;
-      this.refs.summary.textContent = this.ui.buildSummary(this.engine, this.ehr, this.radiology, this._sessionLabel());
+      this.refs.summary.textContent = this.ui.buildSummary(this.engine, this.ehr, this.radiology, this._sessionLabel(), this.board.template.side);
       this.refs.post.classList.remove('hidden');
       this.refs.post.scrollIntoView({ behavior: 'smooth', block: 'start' });
       this._runAiCheck(true);       // one final full AI check so the end state is fresh
@@ -206,6 +335,7 @@ class App {
     const now = new Date();
     this.sessions.save({
       id: this.sessionId,
+      template: this.active,
       name: this._sessionLabel(),
       startedAt: this.sessionStartedAt || now.getTime(),
       endedAt: now.getTime(),
@@ -219,15 +349,19 @@ class App {
     });
   }
 
-  /* Reopen a previously saved consultation. */
+  /* Reopen a previously saved consultation (into its own tab if needed). */
   _loadSession(id) {
     const s = this.sessions.get(id);
     if (!s) return;
+    // older sessions predate the tab concept — treat them as nodule
+    if (s.template && this.boards[s.template] && s.template !== this.active) this.switchBoard(s.template);
+    const nodule = this.board.template.side === 'nodule';
     this.speech.stop(); this.ui.setMicState(false); this.demo.stop();
     this._micPaused = false; this._updatePauseBtn();
     this.sessionId = s.id;
     this.sessionStartedAt = s.startedAt;
     this.refs.sessionName.value = s.name || '';
+    this.board.sessionName = s.name || '';
     this.transcript.restore(s.lines || []);
     this.engine.results = s.results || {};
     this.engine.prevStatus = {};
@@ -239,12 +373,12 @@ class App {
     this.audit.clear();
     this.ui.renderTiles(this.engine);
     this.ui.renderProgress(this.engine);
-    this.ui.renderRadiology(this.radiology);
-    this.ui.renderReadiness(this.readiness);
+    if (nodule) this.ui.renderRadiology(this.radiology);
+    this._renderSide();
     this.ui.renderAudit(this.audit);
     this.ui.clearTranscript('');
     (s.lines || []).forEach(l => this.ui.appendLine(l.speaker || 'Speaker', l.text, l.time));
-    this.refs.summary.textContent = s.summary || this.ui.buildSummary(this.engine, this.ehr, this.radiology, s.name);
+    this.refs.summary.textContent = s.summary || this.ui.buildSummary(this.engine, this.ehr, this.radiology, s.name, this.board.template.side);
     this.finished = true;
     this.refs.post.classList.remove('hidden');
     this.refs.sessionsModal.classList.remove('open');
@@ -400,7 +534,7 @@ class App {
     this.ui.renderRadiology(this.radiology);
     this.ui.renderReadiness(this.readiness);
     if (this.finished) {
-      this.refs.summary.textContent = this.ui.buildSummary(this.engine, this.ehr, this.radiology, this._sessionLabel());
+      this.refs.summary.textContent = this.ui.buildSummary(this.engine, this.ehr, this.radiology, this._sessionLabel(), this.board.template.side);
       this._saveSession();   // scan findings become part of the saved consultation
     }
     if (applied.length) {
@@ -503,13 +637,15 @@ class App {
     // start a fresh consultation (previously saved ones are kept)
     this.sessionId = null;
     this.sessionStartedAt = null;
-    this.refs.sessionName.value = SessionStore.defaultName();
-    // restore EHR defaults and unlock auto-fill
-    this.ehr.age = EHR_DEFAULTS.age; this.ehr.sex = EHR_DEFAULTS.sex;
+    this.board.sessionName = SessionStore.defaultName();
+    this.refs.sessionName.value = this.board.sessionName;
+    // restore this board's EHR defaults and unlock auto-fill
+    const def = this.board.template.ehrDefaults;
+    this.ehr.age = def.age; this.ehr.sex = def.sex;
     this.ehrAgeEdited = false; this.ehrSexEdited = false;
-    this.refs.ehrAge.value = EHR_DEFAULTS.age; this.refs.ehrSex.value = EHR_DEFAULTS.sex;
-    this.refs.ehrNote.textContent = 'Preloaded from EHR · auto-fills if the patient states their age/sex · editable any time';
-    this.ui.clearTranscript('Transcript will appear here. Press “Start listening” to use your microphone, or “Play demo” to run the sample consultation.');
+    this.refs.ehrAge.value = def.age; this.refs.ehrSex.value = def.sex;
+    this.refs.ehrNote.textContent = 'Auto-fills if the patient states their age/sex · editable any time';
+    this.ui.clearTranscript(this._emptyTranscriptMsg());
     this.refresh();
   }
 

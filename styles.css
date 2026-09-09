@@ -20,6 +20,13 @@ header{padding:12px 20px;background:var(--brand);display:flex;align-items:center
 .brand span{color:var(--brand-light)}
 .tag{font-size:12px;color:#cfe4f6}
 
+/* ---- condition tabs ---- */
+.tabs{display:flex;gap:4px;padding:0 20px;background:var(--brand);border-bottom:1px solid var(--brand-dark)}
+.tabs .tab{border:none;border-radius:8px 8px 0 0;background:rgba(255,255,255,.12);color:#eaf3fb;
+  font-weight:700;font-size:13px;padding:9px 18px;margin:0;cursor:pointer;position:relative;top:1px}
+.tabs .tab:hover{background:rgba(255,255,255,.22);box-shadow:none}
+.tabs .tab.active{background:var(--bg);color:var(--brand-dark);border:1px solid var(--line);border-bottom-color:var(--bg)}
+
 /* ---- toolbar ---- */
 .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 20px;background:#fff;border-bottom:1px solid var(--line)}
 button{font-family:inherit;font-size:13px;border:1px solid var(--line);background:#fff;color:var(--txt);

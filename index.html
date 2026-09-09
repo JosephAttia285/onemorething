@@ -11,9 +11,15 @@
 <header>
   <div class="brand-block">
     <div class="brand">One<span>More</span>Thing</div>
-    <div class="tag">Pulmonary Nodule Clinic — consultation completeness assistant</div>
+    <div class="tag" id="brandTag">Pulmonary Nodule Clinic — consultation completeness assistant</div>
   </div>
 </header>
+
+<!-- condition tabs: each is its own live-listening checklist -->
+<div class="tabs" id="tabs" role="tablist">
+  <button class="tab active" data-board="nodule" role="tab" aria-selected="true">Pulmonary Nodule</button>
+  <button class="tab" data-board="asthma" role="tab" aria-selected="false">Paediatric Asthma</button>
+</div>
 
 <div class="toolbar">
   <input id="sessionName" class="sess-name" placeholder="Name this consultation" title="Name of this consultation (saved with the date and time)">
@@ -57,12 +63,18 @@
         <div class="ehr-note" id="ehrNote">Auto-fills if the patient states age/sex · editable</div>
       </div>
     </div>
-    <div class="panel">
+    <div class="panel" id="readinessPanel">
       <div class="panel-h">Risk-score readiness <span class="count">Brock · Herder</span></div>
       <div class="panel-b">
         <div id="readiness"></div>
         <div class="group-label" style="margin-top:12px;display:flex;align-items:center">Radiology inputs <span style="color:var(--faint);font-weight:400;text-transform:none;letter-spacing:0">&nbsp;(clinician)</span><button id="ctBtn2" class="btn-mini">✎ Paste report</button></div>
         <div id="radiology"></div>
+      </div>
+    </div>
+    <div class="panel hidden" id="asthmaPanel">
+      <div class="panel-h">Asthma review <span class="count">NICE NG245</span></div>
+      <div class="panel-b">
+        <div class="ehr-note">This tab checks that the key patient/parent-answerable asthma review questions were covered. Measurements (FeNO, spirometry, peak flow, skin-prick) are entered by the clinician and are not inferred from the conversation.</div>
       </div>
     </div>
   </div>
@@ -156,6 +168,7 @@
 
 <script src="js/secrets.js"></script>
 <script src="js/config.js"></script>
+<script src="js/asthma-config.js"></script>
 <script src="js/engine.js"></script>
 <script src="js/sessions.js"></script>
 <script src="js/speech.js"></script>
