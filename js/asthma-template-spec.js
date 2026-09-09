@@ -178,7 +178,7 @@ const ASTHMA_TEMPLATE_SPEC = {
           options: ['Follow-up in ___ months', 'Discharged to GP; parent happy with GP-led follow-up', 'Patient Initiated Follow-Up (PIFU) with planned discharge in ___ months'],
           reveals_months_on: ['Follow-up in ___ months', 'Patient Initiated Follow-Up (PIFU) with planned discharge in ___ months'] },
       ],
-      education_readonly: 'Education & Support (standard): Asthma Action Plan provided; inhaler technique checked and demonstrated; inhaler-technique and Turbohaler videos signposted; adherence and Montelukast neuropsychiatric side-effects discussed; house dust mite information provided.',
+      education_readonly: 'Education & Support (standard): Asthma Action Plan provided; inhaler technique checked and demonstrated; adherence and Montelukast neuropsychiatric side-effects discussed; house dust mite information provided. (Inhaler-technique video links are in the side panel.)',
     },
   ],
 };

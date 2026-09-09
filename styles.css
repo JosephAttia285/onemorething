@@ -319,3 +319,8 @@ select.tally-in{width:88px;text-align:left}
 .act-item-in{width:80px}
 .act-sum{margin-top:10px;font-size:13px;color:var(--brand-dark);font-weight:700}
 #actModalErr{min-height:16px;margin:8px 0}
+
+/* ---- side-panel resource links ---- */
+.res-links{display:flex;flex-direction:column;gap:8px}
+.res-links a{font-size:12.5px;font-weight:600;color:var(--brand);text-decoration:none;padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel2)}
+.res-links a:hover{border-color:var(--brand);background:#e8f1fb}
