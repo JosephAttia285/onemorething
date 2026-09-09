@@ -96,6 +96,7 @@ class App {
       'modal', 'llmEnabled', 'llmBase', 'llmModel', 'llmKey', 'llmStatus', 'llmTest', 'modalClose',
       'ctModal', 'ctText', 'ctFile', 'ctSample', 'ctExtractNote', 'ctClose', 'ctApply',
       'brandTag', 'tabs', 'readinessPanel', 'asthmaPanel',
+      'historyHandle', 'historyDrawer', 'historyClose', 'historyList', 'drawerScrim',
     ].forEach(id => { this.refs[id] = document.getElementById(id); });
 
     // ----- boards (one live consultation per tab) -----
@@ -218,6 +219,21 @@ class App {
     });
   }
 
+  /* ---- saved-consultations history drawer ---- */
+  _openHistory() {
+    this.ui.renderHistory(this.sessions, this.active);
+    this.refs.historyDrawer.classList.add('open');
+    this.refs.drawerScrim.classList.add('open');
+  }
+  _closeHistory() {
+    this.refs.historyDrawer.classList.remove('open');
+    this.refs.drawerScrim.classList.remove('open');
+  }
+  _toggleHistory() {
+    if (this.refs.historyDrawer.classList.contains('open')) this._closeHistory();
+    else this._openHistory();
+  }
+
   /* Switch to another condition's tab. Each board keeps its own state,
      so switching stops any live input but never loses a transcript. */
   switchBoard(id) {
@@ -328,7 +344,9 @@ class App {
     }
   }
 
-  /* Save the current consultation to this computer. */
+  /* Save the current consultation to this computer.
+     Patient identifiers are redacted locally before anything is stored,
+     so the saved/reviewed copy carries no obvious identifiers. */
   _saveSession() {
     if (this.transcript.isEmpty) return;
     if (!this.sessionId) { this.sessionId = 's' + Date.now().toString(36); this.sessionStartedAt = Date.now(); }
@@ -336,16 +354,16 @@ class App {
     this.sessions.save({
       id: this.sessionId,
       template: this.active,
-      name: this._sessionLabel(),
+      name: anonymisePatient(this._sessionLabel()),
       startedAt: this.sessionStartedAt || now.getTime(),
       endedAt: now.getTime(),
       dateLabel: now.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
-      lines: this.transcript.lines,
+      lines: anonymiseLines(this.transcript.lines),
       results: this.engine.results,
       counts: this.engine.counts(),
       ehr: { ...this.ehr },
       radiology: { ...this.radiology.values },
-      summary: this.refs.summary.textContent,
+      summary: anonymisePatient(this.refs.summary.textContent),
     });
   }
 
@@ -392,15 +410,16 @@ class App {
       this._updatePauseBtn();
     };
     this.refs.relabelBtn.onclick = () => this._finalizeTranscript(true);
-    // saved consultations
-    this.refs.sessionsBtn.onclick = () => { this.ui.renderSessions(this.sessions); this.refs.sessionsModal.classList.add('open'); };
-    this.refs.sessionsClose.onclick = () => this.refs.sessionsModal.classList.remove('open');
-    this.refs.sessionsModal.onclick = (e) => { if (e.target.id === 'sessionsModal') this.refs.sessionsModal.classList.remove('open'); };
-    this.refs.sessionsList.addEventListener('click', (e) => {
+    // saved consultations — slide-out history panel on the left
+    this.refs.sessionsBtn.onclick = () => this._toggleHistory();
+    this.refs.historyHandle.onclick = () => this._toggleHistory();
+    this.refs.historyClose.onclick = () => this._closeHistory();
+    this.refs.drawerScrim.onclick = () => this._closeHistory();
+    this.refs.historyList.addEventListener('click', (e) => {
       const open = e.target.getAttribute && e.target.getAttribute('data-open');
       const del = e.target.getAttribute && e.target.getAttribute('data-del');
-      if (open) this._loadSession(open);
-      if (del) { this.sessions.remove(del); this.ui.renderSessions(this.sessions); }
+      if (open) { this._loadSession(open); this._closeHistory(); }
+      if (del) { this.sessions.remove(del); this.ui.renderHistory(this.sessions, this.active); }
     });
     // welcome / help
     this.refs.helpBtn.onclick = () => this.refs.welcomeModal.classList.add('open');

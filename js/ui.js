@@ -208,6 +208,38 @@ class UIRenderer {
     }).join('');
   }
 
+  /* Saved-consultations list for the left slide-out history drawer.
+     Grouped by day (newest first), each row tagged by condition. */
+  renderHistory(store, activeBoard) {
+    const list = store.list();
+    if (!list.length) {
+      this.refs.historyList.innerHTML = '<div class="empty">No saved consultations yet. Press Stop at the end of a consultation and it is stored here (with identifiers redacted).</div>';
+      return;
+    }
+    const esc = t => String(t || '').replace(/[<>&"]/g, ch => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[ch]));
+    const TPL = { nodule: 'Nodule', asthma: 'Asthma' };
+    let html = '';
+    let lastDay = null;
+    for (const s of list) {
+      const d = new Date(s.endedAt || s.startedAt || Date.now());
+      const day = d.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+      if (day !== lastDay) { html += `<div class="hist-day">${day}</div>`; lastDay = day; }
+      const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      const c = s.counts || {};
+      const tpl = TPL[s.template] || 'Nodule';
+      const tplCls = s.template === 'asthma' ? 'asthma' : 'nodule';
+      html += `<div class="sess-row${s.template && activeBoard && s.template !== activeBoard ? ' other' : ''}">
+        <div class="sess-main">
+          <div class="sess-name-t">${esc(s.name)}</div>
+          <div class="sess-meta"><span class="tpl-badge ${tplCls}">${tpl}</span> ${time} &nbsp;·&nbsp; ${c.green || 0} captured, ${c.orange || 0} to check, ${c.red || 0} to ask</div>
+        </div>
+        <button class="btn-mini" data-open="${s.id}">Open</button>
+        <button class="btn-mini danger" data-del="${s.id}">Delete</button>
+      </div>`;
+    }
+    this.refs.historyList.innerHTML = html;
+  }
+
   /* Toolbar engine pill: state ∈ rules|ai|busy|err */
   setEnginePill(state, text) {
     const p = this.refs.enginePill;

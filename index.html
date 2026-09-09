@@ -15,6 +15,15 @@
   </div>
 </header>
 
+<!-- slide-out history panel (saved consultations) -->
+<button id="historyHandle" class="history-handle" title="Saved consultations">🗂 History</button>
+<div id="drawerScrim" class="drawer-scrim"></div>
+<aside id="historyDrawer" class="drawer" aria-label="Saved consultations">
+  <div class="drawer-h"><span>Saved consultations</span><button id="historyClose" class="btn-mini" style="margin-left:auto">✕ Close</button></div>
+  <div class="drawer-note">Saved on this computer only — nothing is uploaded. Patient identifiers (names, phone/NHS numbers, postcodes, dates) are auto-redacted before saving, on a best-effort basis. Review before relying on it, and never enter real patient data.</div>
+  <div id="historyList" class="sess-list"></div>
+</aside>
+
 <!-- condition tabs: each is its own live-listening checklist -->
 <div class="tabs" id="tabs" role="tablist">
   <button class="tab active" data-board="nodule" role="tab" aria-selected="true">Pulmonary Nodule</button>
@@ -169,6 +178,7 @@
 <script src="js/secrets.js"></script>
 <script src="js/config.js"></script>
 <script src="js/asthma-config.js"></script>
+<script src="js/anonymise.js"></script>
 <script src="js/engine.js"></script>
 <script src="js/sessions.js"></script>
 <script src="js/speech.js"></script>
