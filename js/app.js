@@ -74,7 +74,8 @@ function makeBoard(template) {
     template, items, audit, transcript, radiology, ehr, engine, readiness,
     ehrAgeEdited: false, ehrSexEdited: false, finished: false,
     sessionId: null, sessionStartedAt: null, sessionName: SessionStore.defaultName(),
-    _aiLastLen: 0,
+    _aiLastLen: 0, formValues: null,
+    act: new ActReadiness(), tally: {},
   };
 }
 
@@ -97,7 +98,14 @@ class App {
       'ctModal', 'ctText', 'ctFile', 'ctSample', 'ctExtractNote', 'ctClose', 'ctApply',
       'brandTag', 'tabs', 'readinessPanel', 'asthmaPanel',
       'historyHandle', 'historyDrawer', 'historyClose', 'historyList', 'drawerScrim',
+      'statusbar', 'stage', 'asthmaSubnav', 'asthmaFormWrap', 'asthmaFormRoot',
+      'actCard', 'tallyCard', 'actModal', 'actModalTitle', 'actModalSub', 'actItemised',
+      'actTotalOnly', 'actTotalInput', 'actTotalLabel', 'actTotalHint', 'actModalErr',
+      'actModalCancel', 'actModalSave',
     ].forEach(id => { this.refs[id] = document.getElementById(id); });
+
+    // which asthma sub-view is showing: 'checklist' (live listening) or 'template' (form)
+    this.asthmaView = 'checklist';
 
     // ----- boards (one live consultation per tab) -----
     this.boards = { nodule: makeBoard(TEMPLATES.nodule), asthma: makeBoard(TEMPLATES.asthma) };
@@ -158,6 +166,13 @@ class App {
   init() {
     this._wire();
     this._wireTabs();
+    // structured asthma clinic template (rendered once; asthma board only)
+    this.asthmaForm = new AsthmaForm(this.refs.asthmaFormRoot, ASTHMA_TEMPLATE_SPEC, {
+      onChange: (v) => { this.boards.asthma.formValues = v; if (this.boards.asthma.finished) this._saveSession(); },
+      getAge: () => this.boards.asthma.ehr.age,
+    });
+    this.asthmaForm.render();
+    this._applyChrome();
     // auto-connect AI if a key is present in secrets.js
     this.llm.configure(AI_DEFAULTS);
     this.refs.llmEnabled.checked = AI_DEFAULTS.enabled;
@@ -200,6 +215,168 @@ class App {
   /* Render the side panel that matches the active board. */
   _renderSide() {
     if (this.board.template.side === 'nodule') this.ui.renderReadiness(this.readiness);
+    else this._renderActPanel();
+  }
+
+  /* ---------- ACT / c-ACT readiness panel + severity tally ---------- */
+  _renderActPanel() {
+    const act = this.board.act;
+    act.setAge(this.board.ehr.age);       // keep age in sync (no boundary side-effects here)
+    const E = s => String(s == null ? '' : s).replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
+
+    // ----- ACT card -----
+    let html;
+    if (act.disabled) {
+      html = `<div class="ready-card"><div class="ready-h">ACT / c-ACT readiness</div>
+        <div class="ready-b"><div class="status-line no">${E(act.reason)}</div></div></div>`;
+    } else {
+      const tool = ACT_TOOLS[act.tool];
+      const total = act.totalScore;
+      const band = act.band;
+      let rows = '';
+      if (act.entryMode === 'itemised') {
+        for (const it of tool.items) {
+          const v = act.responses[it.id];
+          const shown = v != null ? `${v} / ${it.max}` : 'not entered';
+          rows += `<div class="ready-row"><span class="k">${E(ACT_ITEM_LABELS[it.id])}</span><span class="v ${v != null ? 'ok' : 'no'}">${shown}</span></div>`;
+        }
+      } else {
+        rows += `<div class="ready-row"><span class="k">Total (${tool.totalMin}–${tool.totalMax})</span><span class="v ${total != null ? 'ok' : 'no'}">${total != null ? total : 'not entered'}</span></div>`;
+      }
+      const totalRow = act.entryMode === 'itemised'
+        ? `<div class="ready-row" style="border-top:1px solid var(--line);margin-top:4px;padding-top:6px"><span class="k"><b>Total</b> (${tool.totalMin}–${tool.totalMax})</span><span class="v ${total != null ? 'ok' : 'no'}">${total != null ? total : 'not entered'}</span></div>` : '';
+      let status, cls;
+      if (band) { status = `${tool.name}: ${total} — ${band.label}`; cls = band.band === 'green' ? 'ok' : band.band === 'amber' ? 'partial' : 'no'; }
+      else { status = `${tool.name}: score not complete`; cls = 'partial'; }
+      html = `<div class="ready-card ${band ? 'band-' + band.band : ''}"><div class="ready-h">${tool.name} readiness<span class="pct">${act.entryMode === 'itemised' ? 'itemised' : 'total only'}</span></div>
+        <div class="ready-b">${rows}${totalRow}
+          <button class="btn-mini" data-act-open style="margin-top:8px">✎ Enter score</button>
+          <div class="status-line ${cls}">${E(status)}</div>
+        </div></div>`;
+    }
+    this.refs.actCard.innerHTML = html;
+
+    // ----- Severity & risk tally (not a validated score) -----
+    const t = this.board.tally;
+    let trows = '';
+    for (const r of TALLY_ROWS) {
+      const val = t[r.id] != null ? t[r.id] : '';
+      const input = r.type === 'yesno'
+        ? `<select class="tally-in" data-tid="${r.id}"><option value=""${val === '' ? ' selected' : ''}>—</option>${['Yes', 'No', 'Unknown'].map(o => `<option${val === o ? ' selected' : ''}>${o}</option>`).join('')}</select>`
+        : `<input type="number" min="0" class="tally-in" data-tid="${r.id}" value="${E(val)}" placeholder="—">`;
+      trows += `<div class="ready-row"><span class="k">${E(r.label)}</span>${input}</div>`;
+    }
+    this.refs.tallyCard.innerHTML = `<div class="ready-card"><div class="ready-h">Severity &amp; risk tally<span class="pct">Tally — not a validated score</span></div>
+      <div class="ready-b">${trows}</div></div>`;
+  }
+
+  /* Apply an age change to the asthma ACT tool, honouring the 11/12
+     boundary (confirm + clear on a user edit; clear silently otherwise). */
+  _applyActAge(newAge, userInitiated) {
+    const act = this.boards.asthma.act;
+    if (act.toolWouldChange(newAge) && act.hasData()) {
+      if (userInitiated) {
+        const ok = confirm('Changing the age changes the ACT tool (c-ACT ↔ ACT) and will clear the score entered so far. Continue?');
+        if (!ok) {
+          const prev = act.patientAge == null ? '' : String(act.patientAge);
+          this.boards.asthma.ehr.age = prev; this.refs.ehrAge.value = prev;
+          return false;
+        }
+      }
+      act.clearResponses();
+    }
+    act.setAge(newAge);
+    return true;
+  }
+
+  _openActModal() {
+    const act = this.board.act;
+    if (act.disabled) return;
+    const tool = ACT_TOOLS[act.tool];
+    this.refs.actModalTitle.textContent = `Enter ${tool.name} score`;
+    this.refs.actModalSub.textContent = `${tool.name} (age ${act.patientAge}). Clinician-entered only — range ${tool.totalMin}–${tool.totalMax}.`;
+    this.refs.actModalErr.textContent = '';
+    // set mode radios
+    this.refs.actModal.querySelectorAll('input[name="actMode"]').forEach(r => { r.checked = r.value === act.entryMode; });
+    this._renderActModalMode();
+    this.refs.actModal.classList.add('open');
+  }
+
+  _renderActModalMode() {
+    const act = this.board.act;
+    const tool = ACT_TOOLS[act.tool];
+    const mode = this.refs.actModal.querySelector('input[name="actMode"]:checked').value;
+    this.refs.actItemised.hidden = mode !== 'itemised';
+    this.refs.actTotalOnly.hidden = mode !== 'total';
+    if (mode === 'itemised') {
+      this.refs.actItemised.innerHTML = tool.items.map(it =>
+        `<div class="act-item"><label>${ACT_ITEM_LABELS[it.id]} <span class="ff-unit">(${it.min}–${it.max})</span></label>
+          <input type="number" class="ff-ctl act-item-in" data-item="${it.id}" min="${it.min}" max="${it.max}" value="${act.responses[it.id] != null ? act.responses[it.id] : ''}"></div>`
+      ).join('') + `<div class="act-sum">Total: <b data-act-sum>—</b> / ${tool.totalMax}</div>`;
+      this._updateActModalSum();
+    } else {
+      this.refs.actTotalLabel.textContent = `${tool.name} total`;
+      this.refs.actTotalHint.textContent = `valid range ${tool.totalMin}–${tool.totalMax}`;
+      this.refs.actTotalInput.value = act.entryMode === 'total' && act.totalScore != null ? act.totalScore : '';
+    }
+  }
+
+  _updateActModalSum() {
+    const tool = ACT_TOOLS[this.board.act.tool];
+    let sum = 0, complete = true;
+    for (const it of tool.items) {
+      const el = this.refs.actItemised.querySelector(`[data-item="${it.id}"]`);
+      const v = el && el.value !== '' ? Number(el.value) : null;
+      if (v == null) complete = false; else sum += v;
+    }
+    const b = this.refs.actItemised.querySelector('[data-act-sum]');
+    if (b) b.textContent = complete ? String(sum) : '—';
+  }
+
+  _saveActModal() {
+    const act = this.board.act;
+    const tool = ACT_TOOLS[act.tool];
+    const mode = this.refs.actModal.querySelector('input[name="actMode"]:checked').value;
+    this.refs.actModalErr.textContent = '';
+    if (mode === 'itemised') {
+      // validate all first (reject out-of-range, never clamp)
+      const entries = tool.items.map(it => {
+        const el = this.refs.actItemised.querySelector(`[data-item="${it.id}"]`);
+        return { it, raw: el ? el.value : '' };
+      });
+      for (const { it, raw } of entries) {
+        if (raw === '') continue;
+        const n = Number(raw);
+        if (isNaN(n) || !Number.isInteger(n) || n < it.min || n > it.max) {
+          this.refs.actModalErr.textContent = `${ACT_ITEM_LABELS[it.id]}: value must be a whole number between ${it.min} and ${it.max}.`;
+          this.refs.actModalErr.style.color = 'var(--red)';
+          return;
+        }
+      }
+      act.setEntryMode('itemised');
+      act.clearResponses();
+      for (const { it, raw } of entries) {
+        if (raw !== '') { const r = act.setResponse(it.id, raw, ACT_CLINICIAN); if (!r.ok) { this.refs.actModalErr.textContent = r.message; this.refs.actModalErr.style.color = 'var(--red)'; return; } }
+      }
+    } else {
+      // validate BEFORE mutating committed state (so a bad value never
+      // orphans an existing itemised score)
+      const raw = this.refs.actTotalInput.value;
+      if (raw !== '') {
+        const n = Number(raw);
+        if (isNaN(n) || !Number.isInteger(n) || n < tool.totalMin || n > tool.totalMax) {
+          this.refs.actModalErr.textContent = `${tool.name} total must be a whole number between ${tool.totalMin} and ${tool.totalMax}.`;
+          this.refs.actModalErr.style.color = 'var(--red)';
+          return;
+        }
+      }
+      act.setEntryMode('total');
+      act.clearResponses();
+      act.setTotal(raw, ACT_CLINICIAN);
+    }
+    this.refs.actModal.classList.remove('open');
+    this._renderActPanel();
+    if (this.finished) this._saveSession();
   }
 
   _emptyTranscriptMsg() {
@@ -217,6 +394,29 @@ class App {
       const b = e.target.closest('.tab');
       if (b && b.dataset.board) this.switchBoard(b.dataset.board);
     });
+    this.refs.asthmaSubnav.addEventListener('click', (e) => {
+      const b = e.target.closest('.subtab');
+      if (b && b.dataset.view) this._setAsthmaView(b.dataset.view);
+    });
+  }
+
+  _setAsthmaView(view) {
+    this.asthmaView = view;
+    this._applyChrome();
+  }
+
+  /* Show/hide the checklist stage vs the structured template form,
+     and the asthma sub-nav, based on the active board + sub-view. */
+  _applyChrome() {
+    const asthma = this.active === 'asthma';
+    const template = asthma && this.asthmaView === 'template';
+    this.refs.asthmaSubnav.classList.toggle('hidden', !asthma);
+    this.refs.asthmaFormWrap.classList.toggle('hidden', !template);
+    this.refs.statusbar.classList.toggle('hidden', template);
+    this.refs.stage.classList.toggle('hidden', template);
+    this.refs.post.classList.toggle('hidden', template || !this.finished);
+    this.refs.asthmaSubnav.querySelectorAll('.subtab').forEach(b =>
+      b.classList.toggle('active', b.dataset.view === this.asthmaView));
   }
 
   /* ---- saved-consultations history drawer ---- */
@@ -271,7 +471,7 @@ class App {
     this._restoreTranscriptDOM();
     this._updatePauseBtn();
     this.refs.liveDot.classList.remove('on');
-    this.refs.post.classList.toggle('hidden', !this.finished);
+    this._applyChrome();
     this.refresh();
     if (this.finished) this.refs.summary.textContent = this.ui.buildSummary(this.engine, this.ehr, this.radiology, this._sessionLabel(), this.board.template.side);
   }
@@ -348,7 +548,12 @@ class App {
      Patient identifiers are redacted locally before anything is stored,
      so the saved/reviewed copy carries no obvious identifiers. */
   _saveSession() {
-    if (this.transcript.isEmpty) return;
+    const form = this.board.formValues;
+    const hasForm = form && (Object.keys(form.fields || {}).length || Object.keys(form.meds || {}).length || Object.keys(form.skin || {}).length);
+    const act = this.board.act;
+    const hasAct = act && act.hasData();
+    const hasTally = Object.keys(this.board.tally || {}).length;
+    if (this.transcript.isEmpty && !hasForm && !hasAct && !hasTally) return;
     if (!this.sessionId) { this.sessionId = 's' + Date.now().toString(36); this.sessionStartedAt = Date.now(); }
     const now = new Date();
     this.sessions.save({
@@ -363,8 +568,20 @@ class App {
       counts: this.engine.counts(),
       ehr: { ...this.ehr },
       radiology: { ...this.radiology.values },
+      form: hasForm ? this._anonForm(form) : null,
+      act: hasAct ? { patientAge: act.patientAge, entryMode: act.entryMode, responses: { ...act.responses }, total: act._total } : null,
+      tally: hasTally ? { ...this.board.tally } : null,
       summary: anonymisePatient(this.refs.summary.textContent),
     });
+  }
+
+  /* Redact free-text values inside the structured form before storing. */
+  _anonForm(v) {
+    const out = { fields: {}, meds: v.meds || {}, skin: v.skin || {} };
+    for (const [k, val] of Object.entries(v.fields || {})) {
+      out.fields[k] = typeof val === 'string' ? anonymisePatient(val) : val;
+    }
+    return out;
   }
 
   /* Reopen a previously saved consultation (into its own tab if needed). */
@@ -397,10 +614,17 @@ class App {
     this.ui.clearTranscript('');
     (s.lines || []).forEach(l => this.ui.appendLine(l.speaker || 'Speaker', l.text, l.time));
     this.refs.summary.textContent = s.summary || this.ui.buildSummary(this.engine, this.ehr, this.radiology, s.name, this.board.template.side);
+    // structured asthma form + ACT + tally
+    if (this.active === 'asthma') {
+      if (this.asthmaForm) { this.asthmaForm.clear(); if (s.form) { this.asthmaForm.setValues(s.form); this.board.formValues = s.form; } }
+      const act = this.board.act; act.clearResponses(); act.patientAge = null; act.entryMode = 'itemised';
+      if (s.act) { act.patientAge = s.act.patientAge; act.entryMode = s.act.entryMode || 'itemised'; act.responses = { ...(s.act.responses || {}) }; act._total = s.act.total != null ? s.act.total : null; act._stamp(); }
+      this.board.tally = { ...(s.tally || {}) };
+    }
     this.finished = true;
-    this.refs.post.classList.remove('hidden');
+    this._applyChrome();
     this.refs.sessionsModal.classList.remove('open');
-    this.refs.post.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (!this.refs.post.classList.contains('hidden')) this.refs.post.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   _wire() {
@@ -462,8 +686,29 @@ class App {
     });
     this.refs.resetBtn.onclick = () => this._reset();
 
+    // ACT / c-ACT readiness panel + severity tally
+    this.refs.actCard.addEventListener('click', (e) => { if (e.target.closest('[data-act-open]')) this._openActModal(); });
+    this.refs.tallyCard.addEventListener('input', (e) => {
+      const el = e.target;
+      if (el.classList && el.classList.contains('tally-in')) {
+        const v = el.value.trim();
+        if (v === '') delete this.board.tally[el.dataset.tid]; else this.board.tally[el.dataset.tid] = v;
+        if (this.finished) this._saveSession();
+      }
+    });
+    this.refs.actModal.querySelectorAll('input[name="actMode"]').forEach(r => { r.onchange = () => this._renderActModalMode(); });
+    this.refs.actItemised.addEventListener('input', () => this._updateActModalSum());
+    this.refs.actModalCancel.onclick = () => this.refs.actModal.classList.remove('open');
+    this.refs.actModalSave.onclick = () => this._saveActModal();
+    this.refs.actModal.onclick = (e) => { if (e.target.id === 'actModal') this.refs.actModal.classList.remove('open'); };
+
     // editable EHR patient context — a manual edit locks the field against auto-fill
-    this.refs.ehrAge.oninput = (e) => { this.ehr.age = e.target.value.trim(); this.ehrAgeEdited = true; this.refs.ehrNote.textContent = 'Age/sex set manually · editable any time'; this.ui.renderReadiness(this.readiness); };
+    this.refs.ehrAge.oninput = (e) => {
+      this.ehr.age = e.target.value.trim(); this.ehrAgeEdited = true;
+      this.refs.ehrNote.textContent = 'Age/sex set manually · editable any time';
+      if (this.active === 'asthma') { this._applyActAge(this.ehr.age, true); if (this.asthmaForm) this.asthmaForm.sync(); }
+      this._renderSide();
+    };
     this.refs.ehrSex.onchange = (e) => { this.ehr.sex = e.target.value; this.ehrSexEdited = true; this.refs.ehrNote.textContent = 'Age/sex set manually · editable any time'; this.ui.renderReadiness(this.readiness); };
 
     // settings modal / LLM
@@ -634,6 +879,7 @@ class App {
       this.ehr.sex = ctx.sex; this.refs.ehrSex.value = ctx.sex; applied.push('sex');
     }
     if (applied.length) this.refs.ehrNote.textContent = '✓ ' + applied.join(' & ') + ' picked up from the conversation · edit any time';
+    if (applied.includes('age') && this.active === 'asthma') { this._applyActAge(this.ehr.age, false); if (this.asthmaForm) this.asthmaForm.sync(); }
   }
 
   _reset() {
@@ -665,6 +911,10 @@ class App {
     this.refs.ehrAge.value = def.age; this.refs.ehrSex.value = def.sex;
     this.refs.ehrNote.textContent = 'Auto-fills if the patient states their age/sex · editable any time';
     this.ui.clearTranscript(this._emptyTranscriptMsg());
+    if (this.active === 'asthma') {
+      if (this.asthmaForm) { this.asthmaForm.clear(); this.board.formValues = null; }
+      this.board.act.clearResponses(); this.board.tally = {};
+    }
     this.refresh();
   }
 
