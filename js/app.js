@@ -168,7 +168,11 @@ class App {
     this._wireTabs();
     // structured asthma clinic template (rendered once; asthma board only)
     this.asthmaForm = new AsthmaForm(this.refs.asthmaFormRoot, ASTHMA_TEMPLATE_SPEC, {
-      onChange: (v) => { this.boards.asthma.formValues = v; if (this.boards.asthma.finished) this._saveSession(); },
+      onChange: (v) => {
+        this.boards.asthma.formValues = v;
+        if (!this._applyingDetected && this.active === 'asthma') this.refresh();   // a clinician edit re-colours the tiles
+        if (this.boards.asthma.finished) this._saveSession();
+      },
       getAge: () => this.boards.asthma.ehr.age,
     });
     this.asthmaForm.render();
@@ -203,6 +207,7 @@ class App {
   refresh() {
     this.engine.run(this.transcript);
     this._applyContext();
+    if (this.board.template.side === 'asthma') this._asthmaAutofill();
     this.ui.renderTiles(this.engine);
     this.ui.renderProgress(this.engine);
     this._renderSide();
@@ -210,6 +215,42 @@ class App {
     if (this._miniRoot) this._renderMini();
     if (this.finished) this.refs.summary.textContent = this.ui.buildSummary(this.engine, this.ehr, this.radiology, this._sessionLabel(), this.board.template.side);
     this._scheduleAiCheck();
+  }
+
+  /* Push detected checklist answers into the clinic template (autofilling the
+     report), then reflect any clinician-entered values back onto the tiles so
+     every field's tile goes green once it is answered by speech OR the form. */
+  _asthmaAutofill() {
+    if (!this.asthmaForm) return;
+    const eng = this.engine;
+    const detected = { fields: {}, meds: {} };
+    for (const it of eng.items) {
+      const r = eng.results[it.id];
+      if (!r || r.value == null) continue;
+      if (it.field && it.field.indexOf('med:') === 0) {
+        detected.meds[it.field.slice(4)] = Object.assign({}, detected.meds[it.field.slice(4)], typeof r.value === 'object' ? r.value : {});
+      } else if (it.field && !it.clinicianOnly) {
+        detected.fields[it.field] = r.value;
+      }
+    }
+    this._applyingDetected = true;
+    this.asthmaForm.applyDetected(detected);
+    this._applyingDetected = false;
+    this.board.formValues = this.asthmaForm.serialize();
+
+    const fv = this.board.formValues.fields, mv = this.board.formValues.meds;
+    for (const it of eng.items) {
+      const r = eng.results[it.id]; if (!r) continue;
+      if (it.field && it.field.indexOf('med:') === 0) {
+        const m = mv[it.field.slice(4)];
+        if (m && (m.prescribed === 'Yes' || Object.keys(m).length) && r.status !== 'green') { r.status = 'green'; r.extracted = r.extracted || 'Prescribed / documented'; }
+        continue;
+      }
+      const val = fv[it.field];
+      const has = val != null && val !== '' && !(Array.isArray(val) && !val.length);
+      if (it.clinicianOnly) { if (has) { r.status = 'green'; r.extracted = Array.isArray(val) ? val.join(', ') : String(val); } }
+      else if (has && r.status !== 'green') { r.status = 'green'; r.extracted = Array.isArray(val) ? val.join(', ') : String(val); }
+    }
   }
 
   /* Render the side panel that matches the active board. */
@@ -616,7 +657,15 @@ class App {
     this.refs.summary.textContent = s.summary || this.ui.buildSummary(this.engine, this.ehr, this.radiology, s.name, this.board.template.side);
     // structured asthma form + ACT + tally
     if (this.active === 'asthma') {
-      if (this.asthmaForm) { this.asthmaForm.clear(); if (s.form) { this.asthmaForm.setValues(s.form); this.board.formValues = s.form; } }
+      if (this.asthmaForm) {
+        this.asthmaForm.clear();
+        if (s.form) {
+          this.asthmaForm.setValues(s.form); this.board.formValues = s.form;
+          // treat restored values as clinician-set so autofill won't clobber them
+          Object.keys(s.form.fields || {}).forEach(id => this.asthmaForm.editedFields.add(id));
+          Object.entries(s.form.meds || {}).forEach(([mid, o]) => Object.keys(o).forEach(f => this.asthmaForm.editedFields.add('med:' + mid + ':' + f)));
+        }
+      }
       const act = this.board.act; act.clearResponses(); act.patientAge = null; act.entryMode = 'itemised';
       if (s.act) { act.patientAge = s.act.patientAge; act.entryMode = s.act.entryMode || 'itemised'; act.responses = { ...(s.act.responses || {}) }; act._total = s.act.total != null ? s.act.total : null; act._stamp(); }
       this.board.tally = { ...(s.tally || {}) };

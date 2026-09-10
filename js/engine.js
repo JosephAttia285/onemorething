@@ -13,6 +13,9 @@ class ChecklistItem {
     this.label = cfg.label;
     this.prio = cfg.prio;
     this.src = cfg.src;
+    this.group = cfg.group || cfg.prio;   // display grouping (section for asthma, priority for nodule)
+    this.field = cfg.field || null;       // template field this tile maps to (asthma)
+    this.clinicianOnly = !!cfg.clinicianOnly;
     this.defaultPrompt = cfg.defaultPrompt;
     this._detect = cfg.detect;
   }

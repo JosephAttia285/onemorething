@@ -1,18 +1,15 @@
 /* ============================================================
-   asthma-config.js — paediatric asthma review: data & rules
-   Loaded after config.js so it can reuse the shared detector
-   helpers (_evidence, _latestMatch, _normalizeNumbers, _sentences).
+   asthma-config.js — paediatric asthma live checklist
+   Loaded AFTER config.js and asthma-template-spec.js.
 
-   Same shape as CHECKLIST_CONFIG: each item is
-   { id, label, prio, src, defaultPrompt, detect(lcText) } and
-   detect() returns { status, extracted?, evidence?, missing? }.
-
-   This is a *completeness* checklist for a consultant-led paediatric
-   asthma review clinic (NICE NG245 2024) — it checks whether the key
-   patient/parent-answerable review questions were covered. It does not
-   diagnose, grade control, or recommend treatment. Measurement-only
-   items (FeNO, spirometry, peak flow, skin-prick) are clinician-entered
-   and deliberately excluded from the spoken-conversation checklist.
+   The checklist is GENERATED FROM THE CLINIC TEMPLATE so every
+   template field also appears as a tile, in template order, grouped
+   by section. Conversationally-answerable fields carry a detector
+   that returns a value in the field's own domain, so a detected
+   answer both recolours the tile AND autofills the clinical report
+   (see App._asthmaAutofill). Measurement/clinician fields are shown
+   as locked grey "clinician-entered" tiles and are never inferred
+   from speech. ACT/c-ACT has its own readiness panel and is not a tile.
    ============================================================ */
 
 /* Scripted sample consultation for the asthma tab's "Play demo". */
@@ -32,247 +29,220 @@ const ASTHMA_DEMO_SCRIPT = [
   ['Clinician', "Before you go, we'll check his inhaler technique and go through his written asthma action plan."],
 ];
 
-/* ---------- detector configuration ----------
-   Grouped Critical / Important / Supportive so the tiles cluster the
-   same way the nodule board does. Text arrives lowercased with
-   spelled-out numbers already converted to digits by the engine. */
-const ASTHMA_CHECKLIST = [
+/* ---------- detector helpers ---------- */
+function _firstInt(t, re) { const m = t.match(re); return m ? parseInt(m[1], 10) : null; }
+function _yesNo(t, yesRe, noRe) {
+  if (noRe && noRe.test(t)) return 'No';
+  if (yesRe.test(t)) return 'Yes';
+  return null;
+}
+/* green result carrying a value in the field's own domain (autofills the report) */
+function _val(value, extracted, ev) { return { status: 'green', value, extracted: extracted || String(value), evidence: ev || null }; }
+function _amber(extracted, missing, ev) { return { status: 'orange', extracted, missing, evidence: ev || null }; }
 
-  /* ---------------- Critical ---------------- */
+/* ---------- domain-value detectors, keyed by template field id ----------
+   Each returns { status, value?, extracted?, evidence?, missing? }.
+   `value` is a string (select/text), a Yes/No, a number, or an array
+   (multiselect) using the EXACT option strings from the template spec. */
+const ASTHMA_FIELD_DETECTORS = {
 
-  { id: 'AS1', label: 'Symptom pattern', prio: 'Critical', src: ['NICE NG245'],
-    defaultPrompt: 'What symptoms does the child get — cough, wheeze, chest tightness, breathlessness?',
-    detect(t) {
-      const cough = /cough/;
-      const wheez = /wheez/;
-      const tight = /tight(?:ness)?[^.]{0,15}chest|chest[^.]{0,10}tight|tight chest/;
-      const sob = /short(?:ness)? of breath|breathless|out of breath|puffed out|can'?t catch (?:his|her|their|my) breath|struggl\w* to breathe|difficulty breathing/;
-      const hits = [['cough', cough], ['wheeze', wheez], ['chest tightness', tight], ['breathlessness', sob]]
-        .filter(([, re]) => re.test(t));
-      if (!hits.length) {
-        if (/chesty|bad chest|(?:his|her|their) chest (?:has been|been|is)/.test(t))
-          return { status: 'orange', extracted: 'Chest symptoms mentioned but not characterised.', evidence: _evidence(t, [/chest/]), missing: 'Which symptoms — cough, wheeze, chest tightness, breathlessness?' };
-        return { status: 'red' };
-      }
-      const ev = _evidence(t, [cough, wheez, tight, sob]);
-      if (hits.length >= 2) return { status: 'green', extracted: 'Reports ' + hits.map(h => h[0]).join(', ') + '.', evidence: ev };
-      return { status: 'orange', extracted: hits[0][0] + ' reported; other symptoms not covered.', evidence: ev, missing: 'Ask about the full pattern — cough, wheeze, chest tightness and breathlessness.' };
-    } },
+  symptom_duration_years(t) {
+    const m = t.match(/(?:for|about|around)\s*(\d+)\s*years?/) || t.match(/(\d+)\s*years?\b(?!\s*old)/);
+    if (m && /cough|wheez|symptom|asthma|chest/.test(t)) return _val(Number(m[1]), `${m[1]} years`, _evidence(t, [/years?/]));
+    return { status: 'red' };
+  },
 
-  { id: 'AS2', label: 'Nocturnal / diurnal pattern', prio: 'Critical', src: ['NICE NG245'],
-    defaultPrompt: 'Are the symptoms worse at night or first thing in the morning?',
-    detect(t) {
-      const nightsx = /at night|night[- ]?time|overnight|during the night|in the night|wakes? (?:him|her|them|up)|waking (?:at night|him|her|them)|early morning|first thing in the morning|morning(?:s)?\b/;
-      if (!nightsx.test(t)) return { status: 'red' };
-      const ev = _evidence(t, [nightsx]);
-      if (/every night|most nights|nightly|wakes? (?:him|her|them|up)|coughing (?:all|at) night|cough(?:ing|s)? (?:a lot )?at night|worse at night|worse (?:in|of) the (?:early )?morning|early morning/.test(t))
-        return { status: 'green', extracted: 'Nocturnal / early-morning symptoms reported.', evidence: ev };
-      return { status: 'orange', extracted: 'Night-time symptoms mentioned but frequency unclear.', evidence: ev, missing: 'How often at night — never, occasionally, most nights, every night?' };
-    } },
+  triggers(t) {
+    if (/no (?:known )?triggers|nothing sets? (?:it|him|her) off/.test(t)) return _val(['None known'], 'None known', _evidence(t, [/trigger|sets/]));
+    const map = [
+      ['Viral colds', /viral|(?:a |the |gets? a |catches? a )cold|colds\b|chest infection/],
+      ['Dust (house dust mite)', /dust|house dust mite/],
+      ['Foods', /\bfood|peanut|\begg\b|milk allerg/],
+      ['Animals / pets', /\bcat\b|\bdog\b|pets?|animals?|rabbit|horse/],
+      ['Exercise', /exercise|running|running about|sport|\bpe\b|when (?:he|she|they) runs?/],
+      ['Grass / tree pollen', /pollen|grass|tree|hay ?fever season/],
+      ['Tobacco smoke', /tobacco|cigarette smoke|smoky/],
+      ['Weather change', /cold weather|cold air|weather change/],
+      ['Damp and mould', /damp|mould|mold/],
+      ['Emotions / laughter', /laughing|laughter|excited|crying|gets upset/],
+      ['Air pollution', /pollution|traffic fumes/],
+    ];
+    const hit = map.filter(([, re]) => re.test(t)).map(([o]) => o);
+    if (hit.length) return _val(hit, hit.join(', '), _evidence(t, map.map(m => m[1])));
+    if (/sets? (?:it|him|her) off|triggers?\b|brings it on|flares?/.test(t)) return _amber('Triggers alluded to but not specified.', 'Which specific triggers?', _evidence(t, [/trigger|sets|flares/]));
+    return { status: 'red' };
+  },
 
-  { id: 'AS3', label: 'Triggers', prio: 'Critical', src: ['NICE NG245'],
-    defaultPrompt: 'Does anything set the symptoms off — colds, exercise, allergens, smoke, weather?',
-    detect(t) {
-      const none = /no (?:known )?triggers|nothing (?:seems to |appears to )?sets? (?:it|him|her|them) off|no particular trigger|can'?t (?:think of|identify) (?:any )?triggers/;
-      if (none.test(t)) return { status: 'green', extracted: 'No known triggers.', evidence: _evidence(t, [none]) };
-      const named = [
-        ['viral colds', /viral|(?:a |the |gets? a |catches? a )cold|colds\b|chest infection/],
-        ['exercise', /exercise|running|running about|sport|\bpe\b|playing football|when (?:he|she|they) runs?/],
-        ['pollen', /pollen|grass|tree|hay ?fever season|summer/],
-        ['animals', /\bcat\b|\bdog\b|pets?|animals?|rabbit|horse/],
-        ['dust', /dust|house dust mite|hoovering|dusty/],
-        ['smoke', /smoke|tobacco|bonfire/],
-        ['weather / damp', /cold weather|cold air|weather change|damp|mould|mold/],
-        ['emotion / laughter', /laughing|laughter|emotion|excited|crying|gets upset/],
-      ].filter(([, re]) => re.test(t));
-      if (named.length) return { status: 'green', extracted: 'Triggers: ' + named.map(n => n[0]).join(', ') + '.', evidence: _evidence(t, named.map(n => n[1])) };
-      if (/sets? (?:it|him|her|them) off|triggers?\b|brings it on|flares? (?:up|when|with)|makes? it worse/.test(t))
-        return { status: 'orange', extracted: 'Triggers alluded to but not specified.', evidence: _evidence(t, [/trigger|sets .* off|brings it on|flares|worse/]), missing: 'Which specific triggers — colds, exercise, allergens, smoke, weather?' };
-      return { status: 'red' };
-    } },
+  cough_at_night(t) {
+    if (!/cough/.test(t)) return { status: 'red' };
+    const ev = _evidence(t, [/cough[^.]*night|night[^.]*cough|at night/]);
+    if (/every night|coughs? (?:all|every) night|cough(?:ing)? a lot at night/.test(t)) return _val('Every night', 'Every night', ev);
+    if (/most nights/.test(t)) return _val('Most nights', 'Most nights', ev);
+    if (/occasional|now and then|sometimes at night|the odd night/.test(t) && /night/.test(t)) return _val('Occasionally', 'Occasionally', ev);
+    if (/cough[^.]*night|night[^.]*cough|at night/.test(t)) return _val('Most nights', 'Night cough reported', ev);
+    if (/no (?:night|nocturnal) cough|not at night/.test(t)) return _val('Never', 'No night cough', ev);
+    return { status: 'red' };
+  },
 
-  { id: 'AS4', label: 'Preventer (ICS) inhaler', prio: 'Critical', src: ['NICE NG245', 'BNFc'],
-    defaultPrompt: 'Which preventer (steroid) inhaler is the child on, and at what dose?',
-    detect(t) {
-      const prev = /clenil|beclometason|beclomethason|brown (?:inhaler|puffer|one)|preventer|steroid inhaler|seretide|symbicort|fostair|fluticason|flixotide|\bqvar\b|kelhale|soprobec|purple inhaler|pink inhaler|maintenance inhaler/;
-      if (!prev.test(t)) return { status: 'red' };
-      const ev = _evidence(t, [prev]);
-      const named = /clenil|beclomet|seretide|symbicort|fostair|fluticason|flixotide|\bqvar\b|kelhale|soprobec/.test(t);
-      const use = /twice a day|two times a day|every day|daily|morning and (?:night|evening)|takes? (?:it|the)|prescribed|\d+\s*puffs?|puff twice/.test(t);
-      if (named || use) return { status: 'green', extracted: 'On a preventer (ICS) inhaler.', evidence: ev };
-      return { status: 'orange', extracted: 'Preventer inhaler referred to only vaguely.', evidence: ev, missing: 'Which preventer, what strength/dose, and how often?' };
-    } },
+  episodic_diurnal(t) {
+    const v = _yesNo(t, /worse at night|worse (?:in|of) the (?:early )?morning|early morning|first thing in the morning|at night/, null);
+    if (v) return _val('Yes', 'Worse at night / early morning', _evidence(t, [/night|morning/]));
+    return { status: 'red' };
+  },
 
-  { id: 'AS5', label: 'Reliever use / frequency', prio: 'Critical', src: ['NICE NG245', 'BNFc'],
-    defaultPrompt: 'How often does the child need the blue reliever inhaler?',
-    detect(t) {
-      const rel = /salbutamol|ventolin|blue (?:inhaler|puffer|one|pump)|reliever/;
-      if (!rel.test(t)) return { status: 'red' };
-      const ev = _evidence(t, [rel]);
-      const freq = /\d+\s*(?:times?|x)\s*(?:a|per)\s*(?:day|week)|once a (?:day|week)|twice a (?:day|week)|two or three times|couple of times|every day|most days|daily|\d+\s*puffs?|rarely|hardly (?:ever|uses?)|only when|never needs?|doesn'?t (?:really )?need/;
-      if (freq.test(t)) return { status: 'green', extracted: 'Reliever use frequency captured.', evidence: _evidence(t, [freq]) || ev };
-      return { status: 'orange', extracted: 'Reliever mentioned but frequency of use not quantified.', evidence: ev, missing: 'How many times a week is the reliever actually used?' };
-    } },
+  symptom_free_intervals(t) {
+    if (/symptom[- ]free|fine in between|well between|no symptoms in between|clear in between/.test(t)) return _val('Yes', 'Has symptom-free intervals');
+    if (/never symptom[- ]free|always (?:has |there)|constant|symptoms all the time/.test(t)) return _val('No', 'No symptom-free intervals');
+    return { status: 'red' };
+  },
 
-  { id: 'AS6', label: 'Adherence to preventer', prio: 'Critical', src: ['NICE NG245'],
-    defaultPrompt: 'How well does the child manage to take the preventer every day?',
-    detect(t) {
-      const ev = _evidence(t, [/miss|forget|every day|adher|takes? (?:it|the preventer|the brown)|\d+\s*(?:out of|\/)\s*14/]);
-      if (/\d+\s*(?:out of|\/)\s*14/.test(t)) return { status: 'green', extracted: 'Adherence quantified (/14 doses).', evidence: ev };
-      if (/(?:takes?|has) (?:it|them|the preventer|the brown)[^.]{0,20}every day|never misses|good (?:with|at taking)|takes it (?:religiously|regularly)/.test(t))
-        return { status: 'green', extracted: 'Good reported adherence.', evidence: ev };
-      if (/miss(?:es|ed)?\b|forget(?:s|ting)?\b|not (?:very )?good (?:with|at)|sometimes skips|doesn'?t always|hit and miss/.test(t))
-        return { status: 'green', extracted: 'Adherence discussed — some missed doses reported.', evidence: ev };
-      return { status: 'red' };
-    } },
+  adherence_doses(t) {
+    const m = t.match(/(\d+)\s*(?:out of|\/)\s*14/);
+    if (m) return _val(Number(m[1]), `${m[1]}/14 doses`);
+    return { status: 'red' };
+  },
 
-  { id: 'AS7', label: 'Exacerbations (last 12 months)', prio: 'Critical', src: ['NICE NG245'],
-    defaultPrompt: 'How many steroid courses, A&E/GP emergency visits or admissions in the last year?',
-    detect(t) {
-      const ev = _evidence(t, [/steroid|prednisolon|a&e|\bed\b|emergency|admission|admitted|hospital|attack|flare|exacerbation/]);
-      const none = /no (?:steroid|admissions?|a&e|attacks?|flares?|exacerbations?)|hasn'?t needed (?:steroids?|hospital)|none (?:in the last|this year|so far)|no (?:hospital|emergency) (?:visits?|admissions?)/;
-      if (none.test(t)) return { status: 'green', extracted: 'No significant exacerbations reported.', evidence: _evidence(t, [none]) };
-      const topic = /steroid|prednisolon|a&e|emergency (?:department|visit)|\bed\b|urgent care|out of hours|walk[- ]?in|admitted|admission|stayed in|kept in/;
-      if (topic.test(t)) {
-        const hasCount = /\d+\s*(?:course|courses|times?|admission|admissions|a&e|visit|visits)/.test(t);
-        if (hasCount) return { status: 'green', extracted: 'Exacerbation frequency captured.', evidence: ev };
-        return { status: 'orange', extracted: 'Exacerbations mentioned but numbers unclear.', evidence: ev, missing: 'How many steroid courses, emergency visits and admissions in the last 12 months?' };
-      }
-      return { status: 'red' };
-    } },
+  response_to_treatment(t) {
+    if (/better|improved|improving|helped|much better|working well/.test(t)) return _val('Reported improvement with treatment', 'Improved', _evidence(t, [/better|improv|helped/]));
+    if (/no better|not helping|no improvement|still bad|worse/.test(t)) return _val('Limited response reported', 'Limited response', _evidence(t, [/no better|not helping|worse/]));
+    return { status: 'red' };
+  },
 
-  { id: 'AS8', label: 'High-risk / life-threatening attacks', prio: 'Critical', src: ['NICE NG245'],
-    defaultPrompt: 'Has the child ever needed intensive care (PICU/HDU) or a life-threatening attack?',
-    detect(t) {
-      const risk = /\bpicu\b|paediatric intensive|pediatric intensive|intensive care|\bicu\b|\bhdu\b|high dependency|ventilat|life[- ]?threatening|near[- ]?fatal|resus|stopped breathing/;
-      if (!risk.test(t)) return { status: 'red' };
-      const ev = _evidence(t, [risk]);
-      if (/no (?:picu|icu|hdu|intensive care)|no admissions? to intensive|never (?:been )?(?:in|admitted to) (?:intensive|picu|icu|hdu)|not (?:been )?ventilat/.test(t))
-        return { status: 'green', extracted: 'No PICU/HDU or life-threatening attacks.', evidence: ev };
-      return { status: 'green', extracted: 'High-risk attack history discussed.', evidence: ev };
-    } },
+  eczema_present(t) { const v = _yesNo(t, /eczema|dermatitis|dry (?:skin|patches)/, /no eczema|denies eczema/); return v ? _val(v, v === 'Yes' ? 'Eczema' : 'No eczema', _evidence(t, [/eczema|dermatitis/])) : { status: 'red' }; },
+  rhinitis_present(t) { const v = _yesNo(t, /hay ?fever|allergic rhinitis|itchy (?:eyes|nose)/, /no hay ?fever|no rhinitis/); return v ? _val(v, v === 'Yes' ? 'Hay fever / rhinitis' : 'No hay fever', _evidence(t, [/hay ?fever|rhinitis/])) : { status: 'red' }; },
 
-  { id: 'AS9', label: 'Inhaler technique / spacer', prio: 'Critical', src: ['NICE NG245'],
-    defaultPrompt: 'Has the inhaler technique and spacer use been checked?',
-    detect(t) {
-      const ev = _evidence(t, [/technique|spacer|demonstrat|show(?:ed|n)? (?:me|us|him|her)/]);
-      if (/(?:inhaler )?technique|check (?:his|her|their|the|your) (?:inhaler )?technique|demonstrat\w* (?:the )?(?:technique|inhaler)|show(?:ed|n)? (?:me|us) how (?:to )?(?:use|take)|spacer (?:technique|use)/.test(t))
-        return { status: 'green', extracted: 'Inhaler technique / spacer use addressed.', evidence: ev };
-      if (/spacer/.test(t)) return { status: 'orange', extracted: 'Spacer mentioned; technique not explicitly checked.', evidence: ev, missing: 'Confirm inhaler technique has been observed and corrected.' };
-      return { status: 'red' };
-    } },
+  food_allergy(t) {
+    if (/no (?:known )?food allerg|not allergic to any food|no food allerg/.test(t)) return _val('None known', 'No food allergy');
+    if (/allergic to (?:nuts?|peanut|egg|milk|dairy|wheat|soya?|fish|shellfish)|food allerg|anaphyla/.test(t)) return _val('Confirmed', 'Food allergy reported', _evidence(t, [/allerg|nut|egg|milk/]));
+    return { status: 'red' };
+  },
+  drug_allergy(t) {
+    if (/no (?:known )?drug allerg|\bnkda\b|not allergic to any medic/.test(t)) return _val('None known', 'No drug allergy');
+    if (/allergic to (?:penicillin|amoxicillin|antibiotics?|ibuprofen|nsaid)/.test(t)) return _val('Yes', 'Drug allergy reported', _evidence(t, [/allergic to/]));
+    return { status: 'red' };
+  },
+  other_allergy(t) {
+    if (/no other allerg/.test(t)) return _val('None known', 'No other allergy');
+    return { status: 'red' };
+  },
 
-  /* ---------------- Important ---------------- */
+  prev_picu(t) { if (/\bpicu\b|paediatric intensive|pediatric intensive/.test(t)) return _val(/no picu|never (?:in|been to) picu|no.*intensive care/.test(t) ? 'No' : 'Yes', 'PICU history discussed', _evidence(t, [/picu|intensive/])); return { status: 'red' }; },
+  prev_hdu(t) { if (/\bhdu\b|high dependency/.test(t)) return _val(/no hdu|never.*hdu/.test(t) ? 'No' : 'Yes', 'HDU history discussed', _evidence(t, [/hdu|high dependency/])); return { status: 'red' }; },
+  severe_attacks(t) {
+    if (/life[- ]threatening|near[- ]fatal|ventilated|resus|stopped breathing|blue light|severe attack/.test(t)) return _val('Yes', 'Severe attack history', _evidence(t, [/life|ventilat|resus|severe/]));
+    if (/no severe|never had a (?:severe|bad) attack|no life[- ]threatening/.test(t)) return _val('No', 'No severe attacks');
+    return { status: 'red' };
+  },
 
-  { id: 'AS10', label: 'Atopic history (eczema / rhinitis)', prio: 'Important', src: ['NICE NG245'],
-    defaultPrompt: 'Does the child have eczema or hay fever / allergic rhinitis?',
-    detect(t) {
-      const ecz = /eczema|dermatitis|atopic skin|dry (?:skin|patches)/;
-      const rhin = /hay ?fever|allergic rhinitis|itchy (?:eyes|nose)|sneez|runny nose|blocked nose/;
-      const ev = _evidence(t, [ecz, rhin]);
-      if (/no eczema|no hay ?fever|no (?:history of )?atopy|denies eczema|no (?:skin|allergy) problems/.test(t))
-        return { status: 'green', extracted: 'No eczema / hay fever.', evidence: ev };
-      if (ecz.test(t) || rhin.test(t))
-        return { status: 'green', extracted: 'Atopy: ' + [ecz.test(t) ? 'eczema' : null, rhin.test(t) ? 'hay fever/rhinitis' : null].filter(Boolean).join(' & ') + '.', evidence: ev };
-      return { status: 'red' };
-    } },
+  oral_steroid_courses(t) { const n = _firstInt(t, /(\d+)\s*(?:course|courses)\s*of\s*(?:oral )?steroids?/) ?? _firstInt(t, /(\d+)\s*steroid (?:course|courses)/); if (n != null) return _val(n, `${n} steroid course(s)`, _evidence(t, [/steroid/])); if (/no steroids?|no oral steroid/.test(t)) return _val(0, 'No steroid courses'); return { status: 'red' }; },
+  emergency_visits(t) { const n = _firstInt(t, /(\d+)\s*(?:a&e|ed|emergency|urgent care|gp)\s*(?:visit|visits|attendance)/) ?? _firstInt(t, /(\d+)\s*(?:times? to|visits? to)\s*(?:a&e|ed|the gp)/); if (n != null) return _val(n, `${n} emergency visit(s)`, _evidence(t, [/a&e|emergency|ed\b/])); if (/one a&e|1 a&e|a&e visit|an a&e/.test(t)) return _val(1, 'One A&E visit', _evidence(t, [/a&e/])); return { status: 'red' }; },
+  hospital_admissions(t) { const n = _firstInt(t, /(\d+)\s*(?:hospital )?admissions?/); if (n != null) return _val(n, `${n} admission(s)`, _evidence(t, [/admission|admitted/])); if (/no admissions?|never admitted|no hospital/.test(t)) return _val(0, 'No admissions'); return { status: 'red' }; },
+  salbutamol_canisters(t) { const n = _firstInt(t, /(\d+)\s*(?:salbutamol |ventolin |blue )?(?:inhalers?|canisters?|pumps?)/); if (n != null) return _val(n, `${n} canister(s)`, _evidence(t, [/inhaler|canister/])); return { status: 'red' }; },
+  days_off_school(t) { const n = _firstInt(t, /(\d+)\s*days?\s*off\s*(?:school|nursery)/); if (n != null) return _val(n, `${n} day(s) off school`, _evidence(t, [/off school/])); if (/no (?:days off|time off) school|not missed school/.test(t)) return _val(0, 'No school missed'); return { status: 'red' }; },
 
-  { id: 'AS11', label: 'Allergies (food / drug / other)', prio: 'Important', src: ['NICE NG245'],
-    defaultPrompt: 'Any food, drug or environmental allergies?',
-    detect(t) {
-      const ev = _evidence(t, [/allerg|reacts? to|reaction to|anaphyla|epipen|\bnut|peanut|\begg|penicillin/]);
-      if (/no (?:known )?allergies|no allergies|not allergic to anything|nothing (?:he|she|they)'?s allergic to|no drug allerg|\bnkda\b/.test(t))
-        return { status: 'green', extracted: 'No known allergies.', evidence: ev };
-      if (/allerg|anaphyla|epipen|allergic to|reacts? to|reaction to/.test(t))
-        return { status: 'green', extracted: 'Allergy history discussed.', evidence: ev };
-      return { status: 'red' };
-    } },
+  fh_atopy(t) {
+    const fam = 'family|father|mother|\\bdad\\b|\\bmum\\b|\\bmom\\b|brother|sister|sibling|parent|gran|nan|grandparent';
+    const cond = 'asthma|eczema|hay ?fever|allergies|allergic|atopy';
+    if (new RegExp(`(?:${fam})[^.]{0,40}(?:${cond})`).test(t) || new RegExp(`(?:${cond})[^.]{0,25}(?:${fam})`).test(t)) return _val('Yes', 'Family history of atopy/asthma', _evidence(t, [new RegExp(`(?:${fam})[^.]{0,40}(?:${cond})`)]));
+    if (/no family history|no one in (?:the|his|her) family|nobody.*asthma/.test(t)) return _val('No', 'No family history');
+    return { status: 'red' };
+  },
 
-  { id: 'AS12', label: 'Family history of atopy/asthma', prio: 'Important', src: ['NICE NG245'],
-    defaultPrompt: 'Is there a family history of asthma, eczema, hay fever or allergies?',
-    detect(t) {
-      const fam = 'family|father|mother|\\bdad\\b|\\bmum\\b|\\bmom\\b|brother|sister|sibling|parent|gran|nan|grandparent|grandmother|grandfather';
-      const cond = 'asthma|eczema|hay ?fever|allergies|allergic|atopy|wheez|inhaler';
-      const ev = _evidence(t, [new RegExp('(?:' + fam + ')[^.]{0,40}(?:' + cond + ')'), /family history/]);
-      if (/no family history|no one in (?:the|his|her|their|our) family|nobody (?:in the family )?(?:has|had)|no (?:family )?history of asthma/.test(t))
-        return { status: 'green', extracted: 'No relevant family history.', evidence: ev };
-      if (new RegExp('(?:' + fam + ')[^.]{0,40}(?:' + cond + ')').test(t) || new RegExp('(?:' + cond + ')[^.]{0,25}(?:' + fam + ')').test(t))
-        return { status: 'green', extracted: 'Family history of atopy / asthma reported.', evidence: ev };
-      if (/family history/.test(t)) return { status: 'orange', extracted: 'Family history raised but not specified.', evidence: ev, missing: 'Any family history of asthma, eczema, hay fever or allergies?' };
-      return { status: 'red' };
-    } },
+  smoker_presence(t) {
+    if (/no(?:body| one)? smokes?|nobody smokes|no smokers?|smoke[- ]?free|don'?t smoke (?:at home|in the house)/.test(t)) return _val('No', 'No smoke exposure', _evidence(t, [/smoke/]));
+    if (/smokes?|vap(?:es|ing)|smoker/.test(t)) return _val('Yes', 'Household smoke exposure', _evidence(t, [/smoke|vap/]));
+    return { status: 'red' };
+  },
+  smoker_who(t) {
+    if (!/smoke|vap/.test(t)) return { status: 'red' };
+    if (/both parents smoke|mum and dad smoke/.test(t)) return _val('Both parents', 'Both parents');
+    if (/(?:mum|mother)[^.]{0,15}smoke/.test(t)) return _val('Mother', 'Mother');
+    if (/(?:dad|father)[^.]{0,15}smoke/.test(t)) return _val('Father', 'Father');
+    if (/vap(?:es|ing)|e-?cig/.test(t)) return _val('Vaping / e-cigarettes', 'Vaping / e-cigarettes');
+    if (/outside|in the garden/.test(t)) return _val('Outside home only', 'Outside home only');
+    return { status: 'red' };
+  },
 
-  { id: 'AS13', label: 'Smoke exposure at home', prio: 'Important', src: ['NICE NG245'],
-    defaultPrompt: 'Does anyone smoke or vape at home?',
-    detect(t) {
-      if (!/smok|vap(?:e|ing|es)|cigarett|tobacco/.test(t)) return { status: 'red' };
-      const ev = _evidence(t, [/smok|vap|cigarett|tobacco/]);
-      if (/no(?:body| one)? smokes?|nobody smokes|no smokers?|smoke[- ]?free|no one (?:at home )?smokes|don'?t smoke (?:at home|around|in the house)|no smoking (?:at home|in the house)/.test(t))
-        return { status: 'green', extracted: 'No smoke exposure at home.', evidence: ev };
-      if (/smokes?|vap(?:es|ing)|smoker|cigarett/.test(t))
-        return { status: 'green', extracted: 'Household smoke / vape exposure discussed.', evidence: ev };
-      return { status: 'orange', extracted: 'Smoking raised but home exposure unclear.', evidence: ev, missing: 'Does anyone smoke or vape at home, and where?' };
-    } },
+  pets(t) {
+    if (/no pets?|don'?t have (?:any )?pets|no animals/.test(t)) return _val(['None'], 'None');
+    const map = [['Cat', /\bcat\b/], ['Dog', /\bdog\b/], ['Rabbit', /rabbit/], ['Rodent (hamster/guinea pig)', /hamster|guinea pig|gerbil/], ['Bird', /\bbird\b|budgie|parrot/], ['Horse', /horse|pony/]];
+    const hit = map.filter(([, re]) => re.test(t)).map(([o]) => o);
+    if (hit.length) return _val(hit, hit.join(', '), _evidence(t, map.map(m => m[1])));
+    return { status: 'red' };
+  },
 
-  { id: 'AS14', label: 'Home environment (pets / damp)', prio: 'Important', src: ['NICE NG245'],
-    defaultPrompt: 'Any pets at home, or damp / mould?',
-    detect(t) {
-      const ev = _evidence(t, [/pets?|\bcat\b|\bdog\b|rabbit|hamster|guinea pig|\bbird\b|damp|mould|mold/]);
-      if (/no pets?|don'?t have (?:any )?pets|no animals|no damp|no mould|no mold/.test(t))
-        return { status: 'green', extracted: 'No pets / damp reported.', evidence: ev };
-      if (/\bcat\b|\bdog\b|rabbit|hamster|guinea pig|\bbird\b|pets?|damp|mould|mold/.test(t))
-        return { status: 'green', extracted: 'Home exposures (pets / damp) discussed.', evidence: ev };
-      return { status: 'red' };
-    } },
+  immunisation(t) {
+    if (/up to date|fully (?:immunised|immunized|vaccinated)|had all (?:his|her|their) (?:jabs|vaccines)/.test(t)) return _val('Up to date', 'Up to date', _evidence(t, [/immunis|vaccin|jab/]));
+    if (/not up to date|behind (?:on|with).*(?:jabs|vaccines)/.test(t)) return _val('Not up to date', 'Not up to date');
+    if (/declined|refused.*(?:jabs|vaccines)/.test(t)) return _val('Declined', 'Declined');
+    return { status: 'red' };
+  },
 
-  { id: 'AS15', label: 'Impact (school / activity / sleep)', prio: 'Important', src: ['NICE NG245'],
-    defaultPrompt: 'Is the asthma causing time off school, limiting activity, or disturbing sleep?',
-    detect(t) {
-      const ev = _evidence(t, [/school|nursery|sport|\bpe\b|running|play|activit|wakes?|sleep|days off/]);
-      const school = /days off (?:school|nursery)|miss(?:ed|ing|es)? (?:school|nursery|days)|off school|absent from school/;
-      const activity = /can'?t (?:run|play|keep up)|stops? (?:him|her|them) (?:running|playing)|limits? (?:his|her|their)|struggles? (?:in|with) (?:pe|sport|games)|wheezy when (?:he|she|they) runs?|when (?:he|she|they) runs? (?:around|about)/;
-      const sleep = /wakes? (?:him|her|them|up)|disturb\w* sleep|up at night|loses? sleep/;
-      if (school.test(t) || activity.test(t) || sleep.test(t))
-        return { status: 'green', extracted: 'Impact on school / activity / sleep discussed.', evidence: ev };
-      if (/school|sport|\bpe\b|running|play/.test(t))
-        return { status: 'orange', extracted: 'Activity/school mentioned; impact of asthma not quantified.', evidence: ev, missing: 'Any school absence or limits on sport/play because of the asthma?' };
-      return { status: 'red' };
-    } },
+  attended_with(t) {
+    if (/(?:mum|mother) and (?:dad|father)|both parents/.test(t)) return _val('Both parents', 'Both parents');
+    if (/\bmum\b|\bmother\b/.test(t)) return _val('Mother', 'Mother');
+    if (/\bdad\b|\bfather\b/.test(t)) return _val('Father', 'Father');
+    return { status: 'red' };
+  },
+};
 
-  /* ---------------- Supportive ---------------- */
+/* Medication detectors — a mention of the drug marks it prescribed/continued.
+   Returns { status, value } where value is an object merged into meds[id]. */
+const ASTHMA_MED_DETECTORS = {
+  salbutamol(t) { return /salbutamol|ventolin|blue (?:inhaler|puffer|one|pump)|reliever/.test(t) ? _val({ prescribed: 'Yes' }, 'Reliever in use', _evidence(t, [/salbutamol|ventolin|blue/])) : { status: 'red' }; },
+  clenil(t) { return /clenil|beclometason|beclomethason|brown (?:inhaler|puffer|one)/.test(t) ? _val({ prescribed: 'Yes' }, 'Clenil in use', _evidence(t, [/clenil|brown/])) : { status: 'red' }; },
+  seretide(t) { return /seretide/.test(t) ? _val({ prescribed: 'Yes' }, 'Seretide in use', _evidence(t, [/seretide/])) : { status: 'red' }; },
+  fluticasone_mdi(t) { return /flixotide|fluticasone mdi/.test(t) ? _val({ prescribed: 'Yes' }, 'Fluticasone in use', _evidence(t, [/flixotide|fluticasone/])) : { status: 'red' }; },
+  symbicort_mart_turbohaler(t) { return /symbicort.*turbohaler|mart turbohaler/.test(t) ? _val({}, 'Symbicort MART in use', _evidence(t, [/symbicort/])) : { status: 'red' }; },
+  symbicort_mdi(t) { return /symbicort mdi|symbicort.*mouthpiece/.test(t) ? _val({}, 'Symbicort MDI in use', _evidence(t, [/symbicort/])) : { status: 'red' }; },
+  montelukast(t) { return /montelukast|singulair/.test(t) ? _val({ dose_mg: (t.match(/montelukast\s*(\d+)\s*mg/) || [])[1] || undefined }, 'Montelukast in use', _evidence(t, [/montelukast|singulair/])) : { status: 'red' }; },
+};
 
-  { id: 'AS16', label: 'Understanding & action plan', prio: 'Supportive', src: ['NICE NG245'],
-    defaultPrompt: 'Has an asthma action plan been provided and understanding checked?',
-    detect(t) {
-      const ev = _evidence(t, [/action plan|self[- ]?management|what to do (?:if|when)|understand|worried|anxious|leaflet|information/]);
-      if (/action plan|self[- ]?management plan|what to do if (?:it|things) (?:gets?|get) worse|emergency plan|written plan/.test(t))
-        return { status: 'green', extracted: 'Asthma action plan / self-management discussed.', evidence: ev };
-      if (/understand|any questions|worried|anxious|concerns?|explain/.test(t))
-        return { status: 'orange', extracted: 'Understanding touched on; action plan not confirmed.', evidence: ev, missing: 'Provide and confirm a written asthma action plan.' };
-      return { status: 'red' };
-    } },
+/* Fields that are clinician-measured / documentation — never inferred from
+   speech. Shown as locked grey tiles that go green once entered in the template. */
+const ASTHMA_CLINICIAN_FIELDS = new Set([
+  'exam_normal', 'peak_flow_na', 'peak_flow_value', 'peak_flow_pct_predicted',
+  'feno_value', 'feno_interpretation', 'spirometry',
+]);
 
-  { id: 'AS17', label: 'Montelukast tolerance', prio: 'Supportive', src: ['NICE NG245', 'BNFc'],
-    defaultPrompt: 'If on montelukast, any sleep, mood or behaviour side effects?',
-    detect(t) {
-      if (!/montelukast|singulair/.test(t)) return { status: 'grey', extracted: 'Montelukast not mentioned — not applicable.' };
-      const ev = _evidence(t, [/montelukast|singulair|sleep|nightmare|mood|behaviour|behavior|side effect|agitat|tolerat/]);
-      if (/no side effects?|tolerat\w* (?:it )?well|no (?:problems?|issues?|nightmares?)|no (?:sleep|behaviour|behavior|mood) (?:problems?|issues?|disturbance|changes?)/.test(t))
-        return { status: 'green', extracted: 'Montelukast tolerated — no neuropsychiatric side effects.', evidence: ev };
-      if (/nightmare|sleep (?:problems?|disturbance)|mood|behaviour|behavior|agitat|aggress|low mood/.test(t))
-        return { status: 'green', extracted: 'Montelukast side-effects reviewed.', evidence: ev };
-      return { status: 'orange', extracted: 'On montelukast but neuropsychiatric side-effects not checked.', evidence: ev, missing: 'Ask about sleep disturbance, nightmares, mood or behaviour changes.' };
-    } },
+/* Fields flagged Critical for the top-of-screen "Critical: x/y" indicator. */
+const ASTHMA_CRITICAL_FIELDS = new Set([
+  'cough_at_night', 'triggers', 'prev_picu', 'prev_hdu', 'severe_attacks',
+  'oral_steroid_courses', 'emergency_visits', 'hospital_admissions',
+]);
 
-  { id: 'AS18', label: 'Immunisation status', prio: 'Supportive', src: ['NICE NG245'],
-    defaultPrompt: 'Are the routine immunisations and flu vaccine up to date?',
-    detect(t) {
-      if (!/immunis|immuniz|vaccin|\bjabs?\b|flu (?:jab|vaccine|spray)/.test(t)) return { status: 'red' };
-      const ev = _evidence(t, [/immunis|immuniz|vaccin|jabs?|flu/]);
-      if (/up to date|had (?:his|her|their|the) (?:jabs|vaccines|flu)|all (?:his|her|their) (?:jabs|vaccines)|fully (?:immunised|immunized|vaccinated)/.test(t))
-        return { status: 'green', extracted: 'Immunisations up to date.', evidence: ev };
-      if (/not up to date|behind|missed (?:some|his|her)|declined|didn'?t have/.test(t))
-        return { status: 'green', extracted: 'Immunisation status discussed.', evidence: ev };
-      return { status: 'orange', extracted: 'Immunisation raised but status unclear.', evidence: ev, missing: 'Confirm routine immunisations and flu vaccine are up to date.' };
-    } },
-];
+const _GREY = () => ({ status: 'grey', extracted: 'Clinician-entered' });
+
+/* Build the checklist from the clinic template, in template order. */
+function buildAsthmaChecklist() {
+  const items = [];
+  for (const sec of ASTHMA_TEMPLATE_SPEC.sections) {
+    for (const f of (sec.fields || [])) {
+      if (f.type === 'readonly' || f.id === 'act_score') continue;   // ACT has its own panel
+      const clinician = ASTHMA_CLINICIAN_FIELDS.has(f.id);
+      const det = ASTHMA_FIELD_DETECTORS[f.id];
+      items.push({
+        id: f.id, field: f.id, label: f.label, group: sec.title,
+        prio: ASTHMA_CRITICAL_FIELDS.has(f.id) ? 'Critical' : 'Important',
+        clinicianOnly: clinician,
+        defaultPrompt: clinician ? `Enter ${f.label} (clinician-measured)` : `Discuss / document: ${f.label}`,
+        detect: clinician ? _GREY : (det || (() => ({ status: 'red' }))),
+      });
+    }
+    for (const m of (sec.medications || [])) {
+      if (m.type === 'readonly') continue;
+      const det = ASTHMA_MED_DETECTORS[m.id];
+      items.push({
+        id: 'med_' + m.id, field: 'med:' + m.id, label: m.name, group: 'Current Medications', prio: 'Important',
+        defaultPrompt: `Document whether ${m.name} is prescribed/continued`,
+        detect: det || (() => ({ status: 'red' })),
+      });
+    }
+    if (sec.skin_prick) {
+      items.push({ id: 'skin_prick', field: 'skin_prick', label: 'Skin prick test (wheals)', group: sec.title, prio: 'Important', clinicianOnly: true, defaultPrompt: 'Enter skin-prick wheal sizes (clinician)', detect: _GREY });
+    }
+  }
+  return items;
+}
+
+const ASTHMA_CHECKLIST = buildAsthmaChecklist();

@@ -21,12 +21,14 @@ class UIRenderer {
 
   static badge(s) { return `<span class="badge ${s}">${s}</span>`; }
 
-  /* Fixed-position tiles grouped by priority — they only recolour, never move. */
+  /* Fixed-position tiles grouped by section/priority — they only recolour, never move.
+     Groups render in first-seen order, so asthma keeps its template order. */
   renderTiles(engine) {
-    const groups = ['Critical', 'Important', 'Supportive'];
+    const groups = [];
+    for (const it of engine.items) { const g = it.group || it.prio; if (!groups.includes(g)) groups.push(g); }
     let html = '';
     for (const g of groups) {
-      const items = engine.items.filter(it => it.prio === g);
+      const items = engine.items.filter(it => (it.group || it.prio) === g);
       if (!items.length) continue;
       html += `<div class="tile-group-label">${g}</div>`;
       for (const it of items) {

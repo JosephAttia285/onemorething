@@ -16,6 +16,7 @@ class AsthmaForm {
     this.onChange = opts.onChange || (() => {});
     this.getAge = opts.getAge || (() => '');
     this._lastDep = {};
+    this.editedFields = new Set();   // fields the clinician has touched — never overwritten by autofill
   }
 
   static esc(t) { return String(t == null ? '' : t).replace(/[<>&"]/g, ch => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[ch])); }
@@ -49,8 +50,8 @@ class AsthmaForm {
       <pre class="form-note" data-note></pre></section>`;
 
     this.root.innerHTML = html;
-    this.root.addEventListener('input', () => this.sync());
-    this.root.addEventListener('change', () => this.sync());
+    this.root.addEventListener('input', (e) => { this._markEdited(e.target); this.sync(); });
+    this.root.addEventListener('change', (e) => { this._markEdited(e.target); this.sync(); });
     const copy = this.root.querySelector('[data-copy]');
     copy.addEventListener('click', () => {
       navigator.clipboard.writeText(this.root.querySelector('[data-note]').textContent).then(() => {
@@ -194,6 +195,43 @@ class AsthmaForm {
     sel.value = v < 20 ? '< 20 ppb — Normal' : v < 35 ? '20–34 ppb — Intermediate' : '≥ 35 ppb — Positive (eosinophilic)';
   }
 
+  /* Mark a field as clinician-touched (autofill will never overwrite it). */
+  _markEdited(el) {
+    if (!el || !el.dataset) return;
+    const d = el.dataset;
+    if (d.fid) this.editedFields.add(d.fid);
+    else if (d.multi) this.editedFields.add(d.multi);
+    else if (d.free) this.editedFields.add(d.free + '__free');
+    else if (d.months) this.editedFields.add(d.months + '__months');
+    else if (d.spk) this.editedFields.add('spk:' + d.spk);
+    else if (el.classList.contains('med-ctl')) this.editedFields.add('med:' + d.mid + ':' + d.mfield);
+  }
+
+  /* Autofill detected answers from the live checklist. Skips any field the
+     clinician has already touched. { fields: {id: value|array}, meds: {id: {field: value}} } */
+  applyDetected(map) {
+    if (!map) return;
+    for (const [id, val] of Object.entries(map.fields || {})) {
+      if (this.editedFields.has(id)) continue;
+      if (Array.isArray(val)) {
+        const boxes = this.root.querySelectorAll(`[data-multi="${id}"]`);
+        boxes.forEach(b => { b.checked = val.includes(b.value); });
+      } else {
+        const el = this.root.querySelector(`[data-fid="${id}"]`);
+        if (el && el.value !== String(val)) el.value = val;
+      }
+    }
+    for (const [mid, obj] of Object.entries(map.meds || {})) {
+      for (const [field, val] of Object.entries(obj)) {
+        if (val == null) continue;
+        if (this.editedFields.has('med:' + mid + ':' + field)) continue;
+        const el = this.root.querySelector(`.med-ctl[data-mid="${mid}"][data-mfield="${field}"]`);
+        if (el && el.value !== String(val)) el.value = val;
+      }
+    }
+    this.sync();
+  }
+
   serialize() {
     const v = { fields: {}, meds: {}, skin: {} };
     this.root.querySelectorAll('[data-fid]').forEach(el => { if (el.value !== '') v.fields[el.dataset.fid] = el.value; });
@@ -228,6 +266,7 @@ class AsthmaForm {
     this.root.querySelectorAll('.ff-ctl, .ff-free, .ff-months-in, .sp-in, .med-ctl').forEach(el => { el.value = ''; });
     this.root.querySelectorAll('[data-multi]').forEach(el => { el.checked = false; });
     this._lastDep = {};
+    this.editedFields = new Set();
     this.sync();
   }
 
